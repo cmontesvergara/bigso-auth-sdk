@@ -2,6 +2,10 @@
     "name": "@bigsoco/auth-sdk",
     "version": "0.3.0",
     "description": "SDK de autenticación para SSO v2.3 con iframe seguro",
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org/",
+        "access": "public"
+    },
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
