@@ -1,6 +1,6 @@
 {
     "name": "@bigso/auth-sdk",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "SDK de autenticación para SSO v2.3 con iframe seguro",
     "publishConfig": {
         "registry": "https://registry.npmjs.org/",
