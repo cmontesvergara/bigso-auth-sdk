@@ -158,8 +158,15 @@ export class BigsoAuth extends EventEmitter {
                         // Cerrar overlay con animación, luego resolver
                         this.closeUI()
                         cleanup()
-                        this.emit('success', decoded)
-                        resolve(decoded)
+
+                        // Retornar el payload original y decodificado para que la app lo envíe al backend
+                        const result = {
+                            ...decoded,
+                            signed_payload: payload.signed_payload
+                        }
+                        
+                        this.emit('success', result)
+                        resolve(result)
                     } catch (err) {
                         this.debug('Error en sso-success:', err)
                         this.closeUI()
