@@ -14,12 +14,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          # We'll handle the registry and token more explicitly in the publish step
+      
       - run: npm install
       - run: npm run build
-      # Skip tests for now as no test files were found
-      # - run: npm test
+      
       - name: Publish to NPM
-        run: npm publish --access public
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+          npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
