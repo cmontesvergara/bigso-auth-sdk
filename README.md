@@ -1,4 +1,4 @@
-# @bigso/auth-sdk v0.3.0
+# @bigso/auth-sdk
 
 SDK oficial de autenticación para Bigso SSO, compatible con el estándar SSO v2.3. Este paquete permite integrar aplicaciones web con el flujo de autenticación basado en iframe seguro, utilizando PKCE, JWS firmados y comunicación mediante postMessage.
 
