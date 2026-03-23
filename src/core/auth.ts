@@ -259,7 +259,7 @@ export class BigsoAuth extends EventEmitter {
         // Crear iframe (se destruye en cleanup, se recrea aquí)
         this.iframe = document.createElement('iframe')
         this.iframe.className = 'sso-frame'
-        this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}&embedded=true&app_id=${this.options.clientId}&theme=${this.options.theme}`
+        this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}`
         this.iframe.setAttribute('title', 'SSO Login')
         this.overlayEl!.appendChild(this.iframe)
         this.debug('Iframe creado', this.iframe.src)
