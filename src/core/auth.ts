@@ -366,12 +366,17 @@ export class BigsoAuth extends EventEmitter {
     // ─── Helpers ──────────────────────────────────────────────────────
 
     private buildFallbackUrl(): string {
-        const url = new URL(`${this.options.ssoOrigin}/authorize`)
-        url.searchParams.set('client_id', this.options.clientId)
-        url.searchParams.set('response_type', 'code')
+        const url = new URL(this.options.ssoOrigin)
+        // El sso-portal actual intercepta app_id y redirect_uri en la ruta raíz (/)
+        url.searchParams.set('app_id', this.options.clientId)
         url.searchParams.set('redirect_uri', this.options.redirectUri || window.location.origin)
+        
+        // Mantenemos estos parámetros por si en el futuro se implementa el flujo OAuth estándar completo
+        url.searchParams.set('response_type', 'code')
         url.searchParams.set('state', generateRandomId())
         url.searchParams.set('code_challenge_method', 'S256')
+        url.searchParams.set('client_id', this.options.clientId) // Por compatibilidad futura
+        
         return url.toString()
     }
 
