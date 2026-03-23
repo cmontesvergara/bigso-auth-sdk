@@ -12,6 +12,12 @@ export class BigsoAuth extends EventEmitter {
     private messageListener?: (event: MessageEvent) => void
     private abortController?: AbortController
 
+    // UI elements (Shadow DOM)
+    private hostEl?: HTMLDivElement
+    private shadowRoot?: ShadowRoot
+    private overlayEl?: HTMLDivElement
+    private loginInProgress = false
+
     constructor(options: BigsoAuthOptions) {
         super()
         this.options = {
@@ -19,6 +25,7 @@ export class BigsoAuth extends EventEmitter {
             debug: false,
             redirectUri: '',
             tenantHint: '',
+            theme: 'light',
             ...options
         }
     }
@@ -28,6 +35,14 @@ export class BigsoAuth extends EventEmitter {
      * @returns Promise que resuelve con el payload decodificado del JWS (solo para información; el backend debe validar)
      */
     async login(): Promise<any> {
+        // Guard anti-duplicado: prevenir múltiples instancias
+        if (this.loginInProgress) {
+            this.debug('login() ya en curso, ignorando llamada duplicada')
+            return Promise.reject(new Error('Login already in progress'))
+        }
+        this.loginInProgress = true
+        this.authCompleted = false
+
         // Generar y almacenar contexto de la transacción
         const state = generateRandomId()
         const nonce = generateRandomId()
@@ -36,8 +51,8 @@ export class BigsoAuth extends EventEmitter {
 
         sessionStorage.setItem('sso_ctx', JSON.stringify({ state, nonce, verifier, requestId }))
 
-        // Crear iframe oculto
-        this.createIframe()
+        // Crear y mostrar UI (overlay + iframe)
+        this.createUI()
 
         return new Promise((resolve, reject) => {
             // Usar AbortController para poder cancelar la promesa externamente
@@ -48,7 +63,9 @@ export class BigsoAuth extends EventEmitter {
                 if (this.timeoutId) clearTimeout(this.timeoutId)
                 if (this.messageListener) window.removeEventListener('message', this.messageListener)
                 this.iframe?.remove()
+                this.iframe = undefined
                 this.authCompleted = true
+                this.loginInProgress = false
             }
 
             // Listener de mensajes postMessage
@@ -76,10 +93,11 @@ export class BigsoAuth extends EventEmitter {
                     this.timeoutId = window.setTimeout(() => {
                         if (!this.authCompleted) {
                             this.debug('Timeout alcanzado, activando fallback')
+                            this.closeUI()
+                            cleanup()
                             this.emit('fallback')
                             window.location.href = this.buildFallbackUrl()
                             reject(new Error('Timeout'))
-                            cleanup()
                         }
                     }, this.options.timeout)
 
@@ -135,17 +153,16 @@ export class BigsoAuth extends EventEmitter {
                             throw new Error('Invalid nonce')
                         }
 
-                        // Opcional: validar exp (ya lo hace jose), pero podemos verificar manualmente si se desea
-                        // if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) { ... }
-
                         this.debug('JWS válido, payload:', decoded)
 
-                        // Limpiar y resolver
+                        // Cerrar overlay con animación, luego resolver
+                        this.closeUI()
                         cleanup()
                         this.emit('success', decoded)
                         resolve(decoded)
                     } catch (err) {
                         this.debug('Error en sso-success:', err)
+                        this.closeUI()
                         cleanup()
                         this.emit('error', err)
                         reject(err)
@@ -158,19 +175,26 @@ export class BigsoAuth extends EventEmitter {
                     const errorPayload = msg.payload as SsoErrorPayload
                     this.debug('sso-error recibido:', errorPayload)
                     clearTimeout(this.timeoutId)
+                    this.closeUI()
+                    cleanup()
 
                     // Manejo especial para version_mismatch (estándar v2.3 sección 3.4)
                     if (errorPayload.code === 'version_mismatch') {
                         this.emit('error', errorPayload)
-                        // Fallback inmediato a redirección
                         window.location.href = this.buildFallbackUrl()
                         reject(new Error(`Version mismatch: expected ${errorPayload.expected_version}`))
                     } else {
                         this.emit('error', errorPayload)
                         reject(errorPayload)
                     }
+                }
 
+                // Evento sso-close (el iframe pide cerrar el modal)
+                if (msg.type === 'sso-close') {
+                    this.debug('sso-close recibido')
+                    this.closeUI()
                     cleanup()
+                    reject(new Error('Login cancelled by user'))
                 }
             }
 
@@ -179,6 +203,7 @@ export class BigsoAuth extends EventEmitter {
             // Manejar señal de aborto (cancelación externa)
             signal.addEventListener('abort', () => {
                 this.debug('Operación abortada')
+                this.closeUI()
                 cleanup()
                 reject(new Error('Login aborted'))
             })
@@ -190,26 +215,156 @@ export class BigsoAuth extends EventEmitter {
         this.abortController?.abort()
     }
 
-    private createIframe() {
+    // ─── UI Management ───────────────────────────────────────────────
+
+    /**
+     * Crea (o reutiliza) el overlay con Shadow DOM y el iframe visible.
+     * Patrón tomado del CDN widget v1: Shadow DOM para aislar estilos.
+     */
+    private createUI() {
+        // Crear host y Shadow DOM si no existe
+        if (!this.hostEl) {
+            this.hostEl = document.createElement('div')
+            this.hostEl.id = 'bigso-auth-host'
+            this.shadowRoot = this.hostEl.attachShadow({ mode: 'open' })
+
+            // Estilos encapsulados
+            const style = document.createElement('style')
+            style.textContent = this.getOverlayStyles()
+            this.shadowRoot.appendChild(style)
+
+            // Overlay
+            this.overlayEl = document.createElement('div')
+            this.overlayEl.className = 'sso-overlay'
+
+            // Botón X de cierre
+            const closeBtn = document.createElement('button')
+            closeBtn.className = 'sso-close-btn'
+            closeBtn.innerHTML = '&times;'
+            closeBtn.setAttribute('aria-label', 'Cerrar modal')
+            closeBtn.addEventListener('click', () => this.abort())
+            this.overlayEl.appendChild(closeBtn)
+
+            // Click fuera del iframe para cerrar
+            this.overlayEl.addEventListener('click', (event) => {
+                if (event.target === this.overlayEl) {
+                    this.abort()
+                }
+            })
+
+            this.shadowRoot.appendChild(this.overlayEl)
+            document.body.appendChild(this.hostEl)
+        }
+
+        // Crear iframe (se destruye en cleanup, se recrea aquí)
         this.iframe = document.createElement('iframe')
-        // URL del iframe con versión y client_id (estándar v2.3 sección 1)
-        this.iframe.src = `${this.options.ssoOrigin}/embed?v=2.3&client_id=${this.options.clientId}`
-        this.iframe.style.display = 'none'
-        this.iframe.setAttribute('title', 'SSO iframe')
-        document.body.appendChild(this.iframe)
+        this.iframe.className = 'sso-frame'
+        this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}&embedded=true&app_id=${this.options.clientId}&theme=${this.options.theme}`
+        this.iframe.setAttribute('title', 'SSO Login')
+        this.overlayEl!.appendChild(this.iframe)
         this.debug('Iframe creado', this.iframe.src)
+
+        // Mostrar overlay con animación
+        this.overlayEl!.classList.remove('sso-closing')
+        this.overlayEl!.style.display = 'flex'
     }
 
+    /**
+     * Cierra el overlay con animación suave (fadeOut + slideDown).
+     * El overlay persiste en el DOM (solo se oculta).
+     */
+    private closeUI() {
+        if (!this.overlayEl || this.overlayEl.style.display === 'none') return
+
+        this.overlayEl.classList.add('sso-closing')
+
+        // Esperar a que la animación termine (200ms)
+        setTimeout(() => {
+            if (this.overlayEl) {
+                this.overlayEl.style.display = 'none'
+                this.overlayEl.classList.remove('sso-closing')
+            }
+        }, 200)
+    }
+
+    /**
+     * Estilos CSS encapsulados dentro del Shadow DOM.
+     * Migrados del widget CDN v1 con las mismas animaciones y responsive.
+     */
+    private getOverlayStyles(): string {
+        return `
+            .sso-overlay {
+                position: fixed;
+                inset: 0;
+                display: none;
+                justify-content: center;
+                align-items: center;
+                background: rgba(0, 0, 0, 0.6);
+                z-index: 999999;
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                animation: fadeIn 0.2s ease;
+            }
+            .sso-frame {
+                width: 370px;
+                height: 350px;
+                border: none;
+                border-radius: 16px;
+                background: var(--card-bg, #fff);
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+                animation: slideUp 0.3s ease;
+            }
+            @media (max-width: 480px), (max-height: 480px) {
+                .sso-frame {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 0;
+                }
+            }
+            .sso-close-btn {
+                position: absolute;
+                top: 12px;
+                right: 12px;
+                width: 32px;
+                height: 32px;
+                background: rgba(0, 0, 0, 0.4);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                font-size: 24px;
+                line-height: 1;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000000;
+                transition: background 0.2s;
+            }
+            .sso-close-btn:hover {
+                background: rgba(0, 0, 0, 0.8);
+            }
+            .sso-overlay.sso-closing {
+                animation: fadeOut 0.2s ease forwards;
+            }
+            .sso-overlay.sso-closing .sso-frame {
+                animation: slideDown 0.2s ease forwards;
+            }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+            @keyframes slideDown { from { transform: translateY(0); opacity: 1; } to { transform: translateY(20px); opacity: 0; } }
+        `
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────
+
     private buildFallbackUrl(): string {
-        // Construir URL de fallback para redirección (endpoint /authorize con parámetros básicos)
         const url = new URL(`${this.options.ssoOrigin}/authorize`)
         url.searchParams.set('client_id', this.options.clientId)
         url.searchParams.set('response_type', 'code')
         url.searchParams.set('redirect_uri', this.options.redirectUri || window.location.origin)
         url.searchParams.set('state', generateRandomId())
         url.searchParams.set('code_challenge_method', 'S256')
-        // Nota: en un flujo real se debería generar code_challenge, pero en fallback se redirige
-        // y luego la app debe manejar el callback. Simplificamos.
         return url.toString()
     }
 

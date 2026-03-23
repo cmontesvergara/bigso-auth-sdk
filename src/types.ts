@@ -15,6 +15,8 @@ export interface BigsoAuthOptions {
     redirectUri?: string
     /** Sugerencia de tenant (opcional) */
     tenantHint?: string
+    /** Tema visual del iframe ('light' | 'dark', por defecto 'light') */
+    theme?: 'light' | 'dark'
 }
 
 export interface SsoInitPayload {
