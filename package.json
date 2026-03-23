@@ -16,7 +16,8 @@
         "build": "tsup src/index.ts --format esm,cjs --dts",
         "dev": "tsup src/index.ts --watch",
         "lint": "eslint .",
-        "test": "vitest"
+        "test": "vitest",
+        "release": "git tag v$npm_package_version && git push origin v$npm_package_version"
     },
     "dependencies": {
         "jose": "^5.0.0"
