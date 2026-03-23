@@ -1,20 +1,43 @@
 {
     "name": "@bigso/auth-sdk",
-    "version": "0.4.5",
+    "version": "0.4.6",
     "description": "SDK de autenticación para SSO v2.3 con iframe seguro",
     "publishConfig": {
         "registry": "https://registry.npmjs.org/",
         "access": "public"
     },
     "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/browser/index.d.ts",
+            "import": "./dist/browser/index.js",
+            "require": "./dist/browser/index.cjs"
+        },
+        "./browser": {
+            "types": "./dist/browser/index.d.ts",
+            "import": "./dist/browser/index.js",
+            "require": "./dist/browser/index.cjs"
+        },
+        "./node": {
+            "types": "./dist/node/index.d.ts",
+            "import": "./dist/node/index.js",
+            "require": "./dist/node/index.cjs"
+        },
+        "./express": {
+            "types": "./dist/express/index.d.ts",
+            "import": "./dist/express/index.js",
+            "require": "./dist/express/index.cjs"
+        }
+    },
+    "main": "dist/browser/index.cjs",
+    "module": "dist/browser/index.js",
+    "types": "dist/browser/index.d.ts",
     "files": [
         "dist"
     ],
     "scripts": {
-        "build": "tsup src/index.ts --format esm,cjs --dts",
-        "dev": "tsup src/index.ts --watch",
+        "build": "tsup src/browser/index.ts src/node/index.ts src/express/index.ts --format esm,cjs --dts --out-dir dist",
+        "dev": "tsup src/browser/index.ts src/node/index.ts src/express/index.ts --watch --out-dir dist",
         "lint": "eslint .",
         "test": "vitest",
         "release": "git tag v$npm_package_version && git push origin v$npm_package_version"
@@ -22,10 +45,15 @@
     "dependencies": {
         "jose": "^5.0.0"
     },
+    "peerDependencies": {
+        "express": "^4.0.0"
+    },
     "devDependencies": {
+        "@types/express": "^4.17.21",
+        "eslint": "^9.0.0",
+        "express": "^5.2.1",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
-        "eslint": "^9.0.0",
         "vitest": "^1.0.0"
     },
     "keywords": [

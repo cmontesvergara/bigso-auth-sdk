@@ -47,3 +47,39 @@ export type AuthEvents =
     | 'error'
     | 'fallback'
     | 'debug'  // para mensajes de depuración internos
+// Backend / Node Types
+export interface SsoUser {
+    userId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+}
+
+export interface SsoTenant {
+    tenantId: string;
+    name: string;
+    slug: string;
+    role: string;
+    permissions: string[];
+}
+
+export interface SsoSessionData {
+    user: SsoUser;
+    tenant: SsoTenant;
+    appId: string;
+    expiresAt: string;
+}
+
+export interface SsoRefreshData {
+    sessionToken: string;
+    refreshToken: string;
+    expiresAt: string;
+    refreshExpiresAt: string;
+}
+
+export interface SsoExchangeResponse extends SsoSessionData {
+    success: boolean;
+    sessionToken: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
+}
