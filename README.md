@@ -162,7 +162,7 @@ npm run lint
 
 ## 📝 Changelog
 
-### v0.3.0 (2026-03-21)
+### v0.4.0 (2026-03-23)
 Protocolo actualizado a SSO v2.3
 - Mensaje `sso-init` con `v: '2.3'`.
 - Timeout reactivo (se inicia tras `sso-ready`).
