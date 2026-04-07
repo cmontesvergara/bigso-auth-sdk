@@ -1,7 +1,7 @@
 import { sha256Base64Url, generateVerifier, generateRandomId } from '../utils/crypto'
 import { EventEmitter } from '../utils/events'
 import { verifySignedPayload } from '../utils/jws'
-import type { BigsoAuthOptions, SsoInitPayload, SsoSuccessPayload, SsoErrorPayload } from '../types'
+import type { BigsoAuthOptions, SsoInitPayload, SsoSuccessPayload, SsoErrorPayload, BigsoAuthResult, SsoTenant } from '../types'
 
 export class BigsoAuth extends EventEmitter {
     private options: Required<BigsoAuthOptions>
@@ -12,7 +12,6 @@ export class BigsoAuth extends EventEmitter {
     private messageListener?: (event: MessageEvent) => void
     private abortController?: AbortController
 
-    // UI elements (Shadow DOM)
     private hostEl?: HTMLDivElement
     private shadowRoot?: ShadowRoot
     private overlayEl?: HTMLDivElement
@@ -21,7 +20,7 @@ export class BigsoAuth extends EventEmitter {
     constructor(options: BigsoAuthOptions) {
         super()
         this.options = {
-            timeout: 5000,           // por defecto 5s (estándar v2.3)
+            timeout: 5000,
             debug: false,
             redirectUri: '',
             tenantHint: '',
@@ -30,12 +29,7 @@ export class BigsoAuth extends EventEmitter {
         }
     }
 
-    /**
-     * Inicia el flujo de autenticación.
-     * @returns Promise que resuelve con el payload decodificado del JWS (solo para información; el backend debe validar)
-     */
-    async login(): Promise<any> {
-        // Guard anti-duplicado: prevenir múltiples instancias
+    async login(): Promise<BigsoAuthResult> {
         if (this.loginInProgress) {
             this.debug('login() ya en curso, ignorando llamada duplicada')
             return Promise.reject(new Error('Login already in progress'))
@@ -43,7 +37,6 @@ export class BigsoAuth extends EventEmitter {
         this.loginInProgress = true
         this.authCompleted = false
 
-        // Generar y almacenar contexto de la transacción
         const state = generateRandomId()
         const nonce = generateRandomId()
         const verifier = generateVerifier()
@@ -51,11 +44,9 @@ export class BigsoAuth extends EventEmitter {
 
         sessionStorage.setItem('sso_ctx', JSON.stringify({ state, nonce, verifier, requestId }))
 
-        // Crear y mostrar UI (overlay + iframe)
         this.createUI()
 
         return new Promise((resolve, reject) => {
-            // Usar AbortController para poder cancelar la promesa externamente
             this.abortController = new AbortController()
             const { signal } = this.abortController
 
@@ -68,9 +59,7 @@ export class BigsoAuth extends EventEmitter {
                 this.loginInProgress = false
             }
 
-            // Listener de mensajes postMessage
             this.messageListener = async (event: MessageEvent) => {
-                // Validación 1: origen exacto (whitelist implícita)
                 if (event.origin !== this.options.ssoOrigin) {
                     this.debug('Ignorado mensaje de origen no autorizado:', event.origin)
                     return
@@ -79,17 +68,14 @@ export class BigsoAuth extends EventEmitter {
                 const msg = event.data
                 this.debug('Mensaje recibido:', msg)
 
-                // Validación 2: requestId debe coincidir (si está presente)
                 if (msg.requestId && msg.requestId !== requestId) {
                     this.debug('requestId no coincide, ignorado')
                     return
                 }
 
-                // Evento sso-ready: iniciar timeout y enviar sso-init
                 if (msg.type === 'sso-ready') {
                     this.debug('sso-ready recibido, iniciando timeout y enviando sso-init')
 
-                    // Iniciar timeout reactivo (estándar v2.3 sección 7)
                     this.timeoutId = window.setTimeout(() => {
                         if (!this.authCompleted) {
                             this.debug('Timeout alcanzado, activando fallback')
@@ -101,7 +87,6 @@ export class BigsoAuth extends EventEmitter {
                         }
                     }, this.options.timeout)
 
-                    // Preparar payload sso-init
                     const codeChallenge = await sha256Base64Url(verifier)
                     const initPayload: SsoInitPayload = {
                         state,
@@ -111,12 +96,11 @@ export class BigsoAuth extends EventEmitter {
                         origin: window.location.origin,
                         ...(this.options.redirectUri && { redirect_uri: this.options.redirectUri }),
                         ...(this.options.tenantHint && { tenant_hint: this.options.tenantHint }),
-                        timeout_ms: this.options.timeout  // pasar el timeout configurado (opcional)
+                        timeout_ms: this.options.timeout
                     }
 
-                    // Enviar sso-init al iframe
                     this.iframe?.contentWindow?.postMessage({
-                        v: '2.3',                     // versión del protocolo (estándar v2.3)
+                        v: '2.3',
                         source: '@app/widget',
                         type: 'sso-init',
                         requestId: this.requestId,
@@ -127,7 +111,6 @@ export class BigsoAuth extends EventEmitter {
                     return
                 }
 
-                // Evento sso-success
                 if (msg.type === 'sso-success') {
                     this.debug('sso-success recibido')
                     clearTimeout(this.timeoutId)
@@ -136,35 +119,39 @@ export class BigsoAuth extends EventEmitter {
                         const payload = msg.payload as SsoSuccessPayload
                         const ctx = JSON.parse(sessionStorage.getItem('sso_ctx') || '{}')
 
-                        // Validar state (comparación en tiempo constante simulada)
                         if (payload.state !== ctx.state) {
                             throw new Error('Invalid state')
                         }
 
-                        // Verificar firma JWS con jose
                         const decoded = await verifySignedPayload(
                             payload.signed_payload,
                             this.options.jwksUrl,
-                            window.location.origin  // aud esperado
+                            window.location.origin
                         )
 
-                        // Validar nonce (estándar v2.3 sección 8 paso 8)
                         if (decoded.nonce !== ctx.nonce) {
                             throw new Error('Invalid nonce')
                         }
 
                         this.debug('JWS válido, payload:', decoded)
 
-                        // Cerrar overlay con animación, luego resolver
                         this.closeUI()
                         cleanup()
 
-                        // Retornar el payload original y decodificado para que la app lo envíe al backend
-                        const result = {
-                            ...decoded,
-                            signed_payload: payload.signed_payload
+                        const result: BigsoAuthResult = {
+                            code: decoded.code as string,
+                            state: (decoded.state as string) || ctx.state,
+                            nonce: ctx.nonce,
+                            codeVerifier: ctx.verifier,
+                            signed_payload: payload.signed_payload,
+                            tenant: (decoded.tenant as SsoTenant | undefined),
+                            jti: decoded.jti as string | undefined,
+                            iss: decoded.iss as string | undefined,
+                            aud: (typeof decoded.aud === 'string' ? decoded.aud : undefined),
+                            exp: decoded.exp as number | undefined,
+                            iat: decoded.iat as number | undefined,
                         }
-                        
+
                         this.emit('success', result)
                         resolve(result)
                     } catch (err) {
@@ -177,7 +164,6 @@ export class BigsoAuth extends EventEmitter {
                     return
                 }
 
-                // Evento sso-error
                 if (msg.type === 'sso-error') {
                     const errorPayload = msg.payload as SsoErrorPayload
                     this.debug('sso-error recibido:', errorPayload)
@@ -185,7 +171,6 @@ export class BigsoAuth extends EventEmitter {
                     this.closeUI()
                     cleanup()
 
-                    // Manejo especial para version_mismatch (estándar v2.3 sección 3.4)
                     if (errorPayload.code === 'version_mismatch') {
                         this.emit('error', errorPayload)
                         window.location.href = this.buildFallbackUrl()
@@ -196,7 +181,6 @@ export class BigsoAuth extends EventEmitter {
                     }
                 }
 
-                // Evento sso-close (el iframe pide cerrar el modal)
                 if (msg.type === 'sso-close') {
                     this.debug('sso-close recibido')
                     this.closeUI()
@@ -207,7 +191,6 @@ export class BigsoAuth extends EventEmitter {
 
             window.addEventListener('message', this.messageListener)
 
-            // Manejar señal de aborto (cancelación externa)
             signal.addEventListener('abort', () => {
                 this.debug('Operación abortada')
                 this.closeUI()
@@ -217,34 +200,25 @@ export class BigsoAuth extends EventEmitter {
         })
     }
 
-    /** Cancela el flujo de autenticación en curso */
     abort() {
         this.abortController?.abort()
     }
 
     // ─── UI Management ───────────────────────────────────────────────
 
-    /**
-     * Crea (o reutiliza) el overlay con Shadow DOM y el iframe visible.
-     * Patrón tomado del CDN widget v1: Shadow DOM para aislar estilos.
-     */
     private createUI() {
-        // Crear host y Shadow DOM si no existe
         if (!this.hostEl) {
             this.hostEl = document.createElement('div')
             this.hostEl.id = 'bigso-auth-host'
             this.shadowRoot = this.hostEl.attachShadow({ mode: 'open' })
 
-            // Estilos encapsulados
             const style = document.createElement('style')
             style.textContent = this.getOverlayStyles()
             this.shadowRoot.appendChild(style)
 
-            // Overlay
             this.overlayEl = document.createElement('div')
             this.overlayEl.className = 'sso-overlay'
 
-            // Botón X de cierre
             const closeBtn = document.createElement('button')
             closeBtn.className = 'sso-close-btn'
             closeBtn.innerHTML = '&times;'
@@ -252,7 +226,6 @@ export class BigsoAuth extends EventEmitter {
             closeBtn.addEventListener('click', () => this.abort())
             this.overlayEl.appendChild(closeBtn)
 
-            // Click fuera del iframe para cerrar
             this.overlayEl.addEventListener('click', (event) => {
                 if (event.target === this.overlayEl) {
                     this.abort()
@@ -263,7 +236,6 @@ export class BigsoAuth extends EventEmitter {
             document.body.appendChild(this.hostEl)
         }
 
-        // Crear iframe (se destruye en cleanup, se recrea aquí)
         this.iframe = document.createElement('iframe')
         this.iframe.className = 'sso-frame'
         this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}`
@@ -271,21 +243,15 @@ export class BigsoAuth extends EventEmitter {
         this.overlayEl!.appendChild(this.iframe)
         this.debug('Iframe creado', this.iframe.src)
 
-        // Mostrar overlay con animación
         this.overlayEl!.classList.remove('sso-closing')
         this.overlayEl!.style.display = 'flex'
     }
 
-    /**
-     * Cierra el overlay con animación suave (fadeOut + slideDown).
-     * El overlay persiste en el DOM (solo se oculta).
-     */
     private closeUI() {
         if (!this.overlayEl || this.overlayEl.style.display === 'none') return
 
         this.overlayEl.classList.add('sso-closing')
 
-        // Esperar a que la animación termine (200ms)
         setTimeout(() => {
             if (this.overlayEl) {
                 this.overlayEl.style.display = 'none'
@@ -294,10 +260,6 @@ export class BigsoAuth extends EventEmitter {
         }, 200)
     }
 
-    /**
-     * Estilos CSS encapsulados dentro del Shadow DOM.
-     * Migrados del widget CDN v1 con las mismas animaciones y responsive.
-     */
     private getOverlayStyles(): string {
         return `
             .sso-overlay {
@@ -367,16 +329,12 @@ export class BigsoAuth extends EventEmitter {
 
     private buildFallbackUrl(): string {
         const url = new URL(this.options.ssoOrigin)
-        // El sso-portal actual intercepta app_id y redirect_uri en la ruta raíz (/)
         url.searchParams.set('app_id', this.options.clientId)
         url.searchParams.set('redirect_uri', this.options.redirectUri || window.location.origin)
-        
-        // Mantenemos estos parámetros por si en el futuro se implementa el flujo OAuth estándar completo
         url.searchParams.set('response_type', 'code')
         url.searchParams.set('state', generateRandomId())
         url.searchParams.set('code_challenge_method', 'S256')
-        url.searchParams.set('client_id', this.options.clientId) // Por compatibilidad futura
-        
+        url.searchParams.set('client_id', this.options.clientId)
         return url.toString()
     }
 

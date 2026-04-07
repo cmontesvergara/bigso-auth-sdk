@@ -1,21 +1,11 @@
-// Tipos públicos del SDK
-
 export interface BigsoAuthOptions {
-    /** Client ID registrado en el SSO */
     clientId: string
-    /** Origen del SSO (ej: https://sso.bigso.co) */
     ssoOrigin: string
-    /** URL del JWKS para verificar firmas (ej: https://sso.bigso.co/.well-known/jwks.json) */
     jwksUrl: string
-    /** Timeout en milisegundos (por defecto 5000) */
     timeout?: number
-    /** Activar logs de depuración */
     debug?: boolean
-    /** URI de redirección registrada (opcional, si se requiere validación exacta) */
     redirectUri?: string
-    /** Sugerencia de tenant (opcional) */
     tenantHint?: string
-    /** Tema visual del iframe ('light' | 'dark', por defecto 'light') */
     theme?: 'light' | 'dark'
 }
 
@@ -27,7 +17,7 @@ export interface SsoInitPayload {
     origin: string
     redirect_uri?: string
     tenant_hint?: string
-    timeout_ms?: number  // permite a la app sobrescribir el timeout del iframe
+    timeout_ms?: number
 }
 
 export interface SsoSuccessPayload {
@@ -46,40 +36,80 @@ export type AuthEvents =
     | 'success'
     | 'error'
     | 'fallback'
-    | 'debug'  // para mensajes de depuración internos
-// Backend / Node Types
+    | 'debug'
+
 export interface SsoUser {
-    userId: string;
-    email: string;
-    firstName: string;
-    lastName: string;
+    userId: string
+    email: string
+    firstName: string
+    lastName: string
 }
 
 export interface SsoTenant {
-    tenantId: string;
-    name: string;
-    slug: string;
-    role: string;
-    permissions: string[];
+    tenantId: string
+    name: string
+    slug: string
+    role: string
 }
 
-export interface SsoSessionData {
-    user: SsoUser;
-    tenant: SsoTenant;
-    appId: string;
-    expiresAt: string;
+export interface SsoTokenPayload {
+    sub: string
+    jti: string
+    iss: string
+    aud: string
+    exp: number
+    iat: number
+    tenants: SsoTenant[]
+    systemRole: string
+    deviceFingerprint?: string
 }
 
-export interface SsoRefreshData {
-    sessionToken: string;
-    refreshToken: string;
-    expiresAt: string;
-    refreshExpiresAt: string;
+export interface V2LoginResponse {
+    success: boolean
+    tokens: {
+        accessToken: string
+        expiresIn: number
+    }
+    user: SsoUser
 }
 
-export interface SsoExchangeResponse extends SsoSessionData {
-    success: boolean;
-    sessionToken: string;
-    refreshToken?: string;
-    refreshExpiresAt?: string;
+export interface V2ExchangeResponse {
+    success: boolean
+    tokens: {
+        accessToken: string
+        refreshToken: string
+        expiresIn: number
+    }
+    user: SsoUser
+    tenant: SsoTenant
+}
+
+export interface V2RefreshResponse {
+    success: boolean
+    tokens: {
+        accessToken: string
+        expiresIn: number
+    }
+}
+
+export interface V2AuthorizeResponse {
+    success: boolean
+    code: string
+    expiresIn: number
+    redirectUri: string
+    state?: string
+}
+
+export interface BigsoAuthResult {
+    code: string
+    state: string
+    nonce: string
+    codeVerifier: string
+    signed_payload: string
+    tenant?: SsoTenant
+    jti?: string
+    iss?: string
+    aud?: string
+    exp?: number
+    iat?: number
 }

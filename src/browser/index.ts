@@ -1,2 +1,2 @@
 export { BigsoAuth } from './auth'
-export type { BigsoAuthOptions } from '../types'
+export type { BigsoAuthOptions, BigsoAuthResult } from '../types'

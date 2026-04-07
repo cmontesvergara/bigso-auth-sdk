@@ -1,7 +1,7 @@
 {
     "name": "@bigso/auth-sdk",
-    "version": "0.4.7",
-    "description": "SDK de autenticación para SSO v2.3 con iframe seguro",
+    "version": "0.5.0",
+    "description": "SDK de autenticación para SSO v2 - JWT Bearer + PKCE",
     "publishConfig": {
         "registry": "https://registry.npmjs.org/",
         "access": "public"
