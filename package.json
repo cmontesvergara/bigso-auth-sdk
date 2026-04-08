@@ -38,6 +38,7 @@
     "scripts": {
         "build": "tsup src/browser/index.ts src/node/index.ts src/express/index.ts --format esm,cjs --dts --out-dir dist",
         "dev": "tsup src/browser/index.ts src/node/index.ts src/express/index.ts --watch --out-dir dist",
+        "prepublishOnly": "npm run build",
         "lint": "eslint .",
         "test": "vitest",
         "release": "git tag v$npm_package_version && git push origin v$npm_package_version"
