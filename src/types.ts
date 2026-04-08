@@ -52,6 +52,14 @@ export interface SsoTenant {
     role: string
 }
 
+export interface SsoJwtTenant {
+    id: string
+    name: string
+    slug: string
+    role: string
+    apps: string[]
+}
+
 export interface SsoTokenPayload {
     sub: string
     jti: string
@@ -59,7 +67,7 @@ export interface SsoTokenPayload {
     aud: string
     exp: number
     iat: number
-    tenants: SsoTenant[]
+    tenants: SsoJwtTenant[]
     systemRole: string
     deviceFingerprint?: string
 }

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { BigsoSsoClient } from '../../node/SsoClient';
-import type { SsoTokenPayload } from '../../types';
+import type { SsoTokenPayload, SsoJwtTenant } from '../../types';
 
 export interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -10,7 +10,7 @@ declare global {
     namespace Express {
         interface Request {
             user?: { userId: string; email: string; firstName: string; lastName: string };
-            tenant?: { tenantId: string; name: string; slug: string; role: string };
+            tenant?: SsoJwtTenant;
             tokenPayload?: SsoTokenPayload;
         }
     }
