@@ -93,7 +93,7 @@ function createSsoAuthRouter(options) {
   });
   router.post("/exchange-v2", async (req, res) => {
     try {
-      const { payload } = req.body;
+      const { payload, codeVerifier: codeVerifierFromBody } = req.body;
       if (!payload) {
         res.status(400).json({ error: "Signed payload is required" });
         return;
@@ -103,12 +103,12 @@ function createSsoAuthRouter(options) {
         res.status(400).json({ error: "No authorization code found in payload" });
         return;
       }
-      const codeVerifier = verified.code_verifier;
-      if (!codeVerifier) {
-        res.status(400).json({ error: "code_verifier is required for PKCE exchange" });
+      const verifier = codeVerifierFromBody || verified.code_verifier;
+      if (!verifier) {
+        res.status(400).json({ error: "codeVerifier is required for PKCE exchange" });
         return;
       }
-      const ssoResponse = await options.ssoClient.exchangeCode(verified.code, codeVerifier);
+      const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
       if (options.onLoginSuccess) {
         await options.onLoginSuccess(ssoResponse);
       }
