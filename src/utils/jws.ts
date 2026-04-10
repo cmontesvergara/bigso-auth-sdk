@@ -33,6 +33,7 @@ export async function verifyAccessToken(
         iat: payload.iat as number,
         tenants: (payload as any).tenants || [],
         systemRole: (payload as any).systemRole || 'user',
+        scope: (payload as any).scope,
         deviceFingerprint: (payload as any).deviceFingerprint,
     }
 }

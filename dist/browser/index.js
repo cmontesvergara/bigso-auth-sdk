@@ -1,6 +1,6 @@
 import {
   verifySignedPayload
-} from "../chunk-5ECHA2VH.js";
+} from "../chunk-PB3GVAEJ.js";
 
 // src/utils/crypto.ts
 async function sha256Base64Url(input) {
@@ -66,6 +66,7 @@ var BigsoAuth = class extends EventEmitter {
     const nonce = generateRandomId();
     const verifier = generateVerifier();
     const requestId = this.requestId;
+    const codeChallenge = await sha256Base64Url(verifier);
     sessionStorage.setItem("sso_ctx", JSON.stringify({ state, nonce, verifier, requestId }));
     this.createUI();
     return new Promise((resolve, reject) => {
@@ -98,11 +99,10 @@ var BigsoAuth = class extends EventEmitter {
               this.closeUI();
               cleanup();
               this.emit("fallback");
-              window.location.href = this.buildFallbackUrl();
+              window.location.href = this.buildFallbackUrl(codeChallenge, state);
               reject(new Error("Timeout"));
             }
           }, this.options.timeout);
-          const codeChallenge = await sha256Base64Url(verifier);
           const initPayload = {
             state,
             nonce,
@@ -175,7 +175,7 @@ var BigsoAuth = class extends EventEmitter {
           cleanup();
           if (errorPayload.code === "version_mismatch") {
             this.emit("error", errorPayload);
-            window.location.href = this.buildFallbackUrl();
+            window.location.href = this.buildFallbackUrl(codeChallenge, state);
             reject(new Error(`Version mismatch: expected ${errorPayload.expected_version}`));
           } else {
             this.emit("error", errorPayload);
@@ -310,12 +310,13 @@ var BigsoAuth = class extends EventEmitter {
         `;
   }
   // ─── Helpers ──────────────────────────────────────────────────────
-  buildFallbackUrl() {
+  buildFallbackUrl(codeChallenge, state) {
     const url = new URL(this.options.ssoOrigin);
     url.searchParams.set("app_id", this.options.clientId);
     url.searchParams.set("redirect_uri", this.options.redirectUri || window.location.origin);
     url.searchParams.set("response_type", "code");
-    url.searchParams.set("state", generateRandomId());
+    url.searchParams.set("state", state);
+    url.searchParams.set("code_challenge", codeChallenge);
     url.searchParams.set("code_challenge_method", "S256");
     url.searchParams.set("client_id", this.options.clientId);
     return url.toString();

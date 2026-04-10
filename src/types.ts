@@ -69,6 +69,7 @@ export interface SsoTokenPayload {
     iat: number
     tenants: SsoJwtTenant[]
     systemRole: string
+    scope?: string[]
     deviceFingerprint?: string
 }
 

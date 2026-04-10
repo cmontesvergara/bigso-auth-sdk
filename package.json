@@ -1,6 +1,6 @@
 {
     "name": "@bigso/auth-sdk",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "description": "SDK de autenticación para SSO v2 - JWT Bearer + PKCE",
     "publishConfig": {
         "registry": "https://registry.npmjs.org/",

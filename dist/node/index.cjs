@@ -48,6 +48,7 @@ async function verifyAccessToken(accessToken, jwksUrl) {
     iat: payload.iat,
     tenants: payload.tenants || [],
     systemRole: payload.systemRole || "user",
+    scope: payload.scope,
     deviceFingerprint: payload.deviceFingerprint
   };
 }
