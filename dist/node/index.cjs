@@ -108,10 +108,13 @@ var BigsoSsoClient = class {
     }
     return await response.json();
   }
-  async refreshTokens() {
+  async refreshTokens(refreshToken) {
+    const headers = { "Content-Type": "application/json" };
+    const body = refreshToken ? JSON.stringify({ refreshToken }) : void 0;
     const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
+      body,
       credentials: "include"
     });
     if (!response.ok) {

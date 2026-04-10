@@ -14,7 +14,7 @@ declare class BigsoSsoClient {
     validateAccessToken(accessToken: string): Promise<SsoTokenPayload | null>;
     login(emailOrNuid: string, password: string): Promise<V2LoginResponse>;
     exchangeCode(code: string, codeVerifier: string): Promise<V2ExchangeResponse>;
-    refreshTokens(): Promise<V2RefreshResponse>;
+    refreshTokens(refreshToken?: string): Promise<V2RefreshResponse>;
     logout(accessToken: string, revokeAll?: boolean): Promise<void>;
 }
 

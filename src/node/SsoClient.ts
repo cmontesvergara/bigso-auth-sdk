@@ -77,10 +77,17 @@ export class BigsoSsoClient {
         return await response.json() as V2ExchangeResponse;
     }
 
-    async refreshTokens(): Promise<V2RefreshResponse> {
+    async refreshTokens(refreshToken?: string): Promise<V2RefreshResponse> {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        
+        // If refreshToken is provided, include it in the body
+        // Otherwise, rely on cookies (credentials: 'include')
+        const body = refreshToken ? JSON.stringify({ refreshToken }) : undefined;
+        
         const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
+            body,
             credentials: 'include',
         });
 
