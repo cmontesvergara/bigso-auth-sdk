@@ -1,6 +1,6 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import type { BigsoSsoClient } from '../../node/SsoClient';
-import type { SsoTokenPayload, SsoJwtTenant } from '../../types';
+import type { SsoJwtTenant, SsoTokenPayload } from '../../types';
 
 export interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -34,15 +34,15 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
                 return;
             }
 
-            const primaryTenant = payload.tenants?.[0];
-
+             const selectedTenantId = payload.tenantId;
+            const tenantInfo =  payload.tenants.find(t => t.id === selectedTenantId) 
             req.user = {
                 userId: payload.sub,
                 email: '',
                 firstName: '',
                 lastName: '',
             };
-            req.tenant = primaryTenant || undefined;
+            req.tenant = tenantInfo;
             req.tokenPayload = payload;
 
             next();

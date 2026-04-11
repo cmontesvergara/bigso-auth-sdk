@@ -42,14 +42,15 @@ function ssoAuthMiddleware(options) {
         res.status(401).json({ error: "Invalid or expired access token" });
         return;
       }
-      const primaryTenant = payload.tenants?.[0];
+      const selectedTenantId = payload.tenantId;
+      const tenantInfo = payload.tenants.find((t) => t.id === selectedTenantId);
       req.user = {
         userId: payload.sub,
         email: "",
         firstName: "",
         lastName: ""
       };
-      req.tenant = primaryTenant || void 0;
+      req.tenant = tenantInfo;
       req.tokenPayload = payload;
       next();
     } catch (error) {
