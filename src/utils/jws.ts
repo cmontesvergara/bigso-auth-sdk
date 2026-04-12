@@ -1,4 +1,4 @@
-import { jwtVerify, createRemoteJWKSet } from 'jose'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 import type { SsoTokenPayload } from '../types'
 
 export async function verifySignedPayload(
@@ -32,6 +32,7 @@ export async function verifyAccessToken(
         exp: payload.exp as number,
         iat: payload.iat as number,
         tenants: (payload as any).tenants || [],
+        tenantId: (payload as any).tenantId || '',
         systemRole: (payload as any).systemRole || 'user',
         scope: (payload as any).scope,
         deviceFingerprint: (payload as any).deviceFingerprint,

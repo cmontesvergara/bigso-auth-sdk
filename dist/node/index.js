@@ -1,7 +1,7 @@
 import {
   verifyAccessToken,
   verifySignedPayload
-} from "../chunk-PB3GVAEJ.js";
+} from "../chunk-BXRGCGYR.js";
 
 // src/node/SsoClient.ts
 var BigsoSsoClient = class {

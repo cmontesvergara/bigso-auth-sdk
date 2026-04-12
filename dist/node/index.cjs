@@ -47,6 +47,7 @@ async function verifyAccessToken(accessToken, jwksUrl) {
     exp: payload.exp,
     iat: payload.iat,
     tenants: payload.tenants || [],
+    tenantId: payload.tenantId || "",
     systemRole: payload.systemRole || "user",
     scope: payload.scope,
     deviceFingerprint: payload.deviceFingerprint
