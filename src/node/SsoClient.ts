@@ -1,5 +1,5 @@
-import { verifySignedPayload, verifyAccessToken } from '../utils/jws';
-import type { SsoUser, SsoTenant, SsoTokenPayload, V2ExchangeResponse, V2RefreshResponse, V2LoginResponse } from '../types';
+import type { SsoTokenPayload, V2ExchangeResponse, V2LoginResponse, V2RefreshResponse } from '../types';
+import { verifyAccessToken, verifySignedPayload } from '../utils/jws';
 
 export interface SsoClientOptions {
     ssoBackendUrl: string;
@@ -79,11 +79,11 @@ export class BigsoSsoClient {
 
     async refreshTokens(refreshToken?: string): Promise<V2RefreshResponse> {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        
+
         // If refreshToken is provided, include it in the body
         // Otherwise, rely on cookies (credentials: 'include')
         const body = refreshToken ? JSON.stringify({ refreshToken }) : undefined;
-        
+
         const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
             method: 'POST',
             headers,
@@ -113,6 +113,22 @@ export class BigsoSsoClient {
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error(err.message || 'Logout failed');
+        }
+    }
+    async session(accessToken: string, sessionId: string, appId: string): Promise<any> {
+        const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ sessionId, appId }),
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.message || 'Session validate failed');
         }
     }
 }

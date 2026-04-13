@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.js';
-import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from '../types-B51l8wWh.js';
+import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from '../types-sI7dMCGy.js';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;

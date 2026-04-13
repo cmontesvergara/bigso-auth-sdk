@@ -46,10 +46,14 @@ export interface SsoUser {
 }
 
 export interface SsoTenant {
-    tenantId: string
+    id: string
     name: string
     slug: string
     role: string
+    permissions: Array<{
+        resource: string;
+        action: string;
+    }>
 }
 
 export interface SsoJwtTenant {
@@ -67,11 +71,10 @@ export interface SsoTokenPayload {
     aud: string
     exp: number
     iat: number
-    tenants: SsoJwtTenant[]
     tenantId: string
+    appId: string
     systemRole: string
-    scope?: string[]
-    deviceFingerprint?: string
+    scope: string[]
 }
 
 export interface V2LoginResponse {
@@ -91,7 +94,8 @@ export interface V2ExchangeResponse {
         expiresIn: number
     }
     user: SsoUser
-    tenant: SsoTenant
+    currentTenant: SsoTenant
+    relatedTenants: SsoTenant[]
 }
 
 export interface V2RefreshResponse {
@@ -99,6 +103,7 @@ export interface V2RefreshResponse {
     tokens: {
         accessToken: string
         expiresIn: number
+        refreshToken?: string
     }
 }
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { ssoAuthMiddleware } from '../middlewares/ssoAuth';
 import type { BigsoSsoClient } from '../../node/SsoClient';
-import type { V2ExchangeResponse, SsoUser } from '../../types';
+import type { V2ExchangeResponse } from '../../types';
+import { ssoAuthMiddleware } from '../middlewares/ssoAuth';
 
 export interface CreateSsoAuthRouterOptions {
     ssoClient: BigsoSsoClient;
@@ -10,34 +10,42 @@ export interface CreateSsoAuthRouterOptions {
     onLogout?: (accessToken: string) => void | Promise<void>;
 }
 
+function validateRequiredEnvs() {
+    const requiredEnvs = ['COOKIE_DOMAIN', 'COOKIE_SAMESITE'];
+    const missingEnvs = requiredEnvs.filter(env => !process.env[env]);
+    if (missingEnvs.length > 0) {
+        throw new Error(`Missing required environment variables: ${missingEnvs.join(', ')}`);
+    }
+}
+
+function extractCookieValueFromMap(cookieMapStr: string | undefined, key: string): string | null {
+    if (!cookieMapStr) return null;
+
+    try {
+        const cookieMap = JSON.parse(cookieMapStr);
+        const entry = cookieMap.find((item: string) => item.startsWith(`${key}:`));
+        return entry ? entry.split(':')[1] : null;
+    } catch (error) {
+        console.warn('[BigsoAuthSDK] Failed to parse cookie name map:', error);
+        return null;
+    }
+}
+function extractCookieNameFromMap(cookieMapStr: string | undefined, key: string): string | null {
+    if (!cookieMapStr) return null;
+
+    try {
+        const cookieMap = JSON.parse(cookieMapStr);
+        const entry = cookieMap.find((item: string) => item.startsWith(`${key}:`));
+        return entry ? entry.split(':')[0] : null;
+    } catch (error) {
+        console.warn('[BigsoAuthSDK] Failed to parse cookie name map:', error);
+        return null;
+    }
+}
+
 export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router {
+    validateRequiredEnvs();
     const router = Router();
-
-    router.post('/exchange', async (req: import('express').Request, res: import('express').Response) => {
-        try {
-            const { code, codeVerifier } = req.body;
-            if (!code || !codeVerifier) {
-                res.status(400).json({ error: 'code and codeVerifier are required' });
-                return;
-            }
-
-            const ssoResponse = await options.ssoClient.exchangeCode(code, codeVerifier);
-
-            if (options.onLoginSuccess) {
-                await options.onLoginSuccess(ssoResponse);
-            }
-
-            res.json({
-                success: true,
-                tokens: ssoResponse.tokens,
-                user: ssoResponse.user,
-                tenant: ssoResponse.tenant,
-            });
-        } catch (error: any) {
-            console.error('[BigsoAuthSDK] Error exchanging code:', error.message);
-            res.status(401).json({ error: error.message || 'Failed to exchange authorization code' });
-        }
-    });
 
     router.post('/exchange-v2', async (req: import('express').Request, res: import('express').Response) => {
         try {
@@ -69,7 +77,8 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 success: true,
                 tokens: ssoResponse.tokens,
                 user: ssoResponse.user,
-                tenant: ssoResponse.tenant,
+                currentTenant: ssoResponse.currentTenant,
+                relatedTenants: ssoResponse.relatedTenants,
             });
         } catch (error: any) {
             console.error('[BigsoAuthSDK] Error exchanging v2 payload:', error.message);
@@ -77,28 +86,54 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         }
     });
 
-    router.get('/session', ssoAuthMiddleware({ ssoClient: options.ssoClient }), (req: import('express').Request, res: import('express').Response) => {
+    router.post('/session', ssoAuthMiddleware({ ssoClient: options.ssoClient }), async (req: import('express').Request, res: import('express').Response) => {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
 
+        const sessionId = extractCookieValueFromMap(req.cookies?.['bs_cookie_name_map'], 'sessionId');
+        const ssoSession = await options.ssoClient.session(req.headers.authorization?.substring(7) as string, sessionId as string, req.tokenPayload?.appId as string);
         res.json({
             success: true,
-            user: req.user,
-            tenant: req.tenant,
+            ...ssoSession,
             tokenPayload: req.tokenPayload,
         });
     });
 
     router.post('/refresh', async (req: import('express').Request, res: import('express').Response) => {
+        const refreshTokenCookieName = extractCookieNameFromMap(req.cookies?.['bs_cookie_name_map'], 'refreshToken') as string;
         try {
-            const ssoResponse = await options.ssoClient.refreshTokens();
+            const refreshToken = extractCookieValueFromMap(req.cookies?.['bs_cookie_name_map'], 'refreshToken') as string;
+
+            const ssoResponse = await options.ssoClient.refreshTokens(refreshToken);
+
+            if (ssoResponse.tokens?.refreshToken) {
+                res.cookie(refreshTokenCookieName, ssoResponse.tokens.refreshToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: process.env.COOKIE_SAMESITE as 'strict' | 'lax' | 'none',
+                    path: '/api/auth/refresh',
+                    maxAge: 7 * 24 * 60 * 60 * 1000,
+                    domain: process.env.COOKIE_DOMAIN
+                })
+
+            } else {
+                console.warn('[BigsoAuthSDK] No refresh token received in refresh response, not setting cookie');
+            }
             res.json({
                 success: true,
                 tokens: ssoResponse.tokens,
             });
         } catch (error: any) {
             console.error('[BigsoAuthSDK] Error refreshing tokens:', error.message);
+
+            if (error.message?.includes('revoked') || error.message?.includes('expired') || error.message?.includes('Invalid')) {
+
+                res.clearCookie(refreshTokenCookieName, {
+                    path: '/api/auth/refresh',
+                    domain: process.env.COOKIE_DOMAIN
+                });
+            }
             res.status(401).json({ error: error.message || 'Failed to refresh tokens' });
         }
     });
@@ -114,12 +149,25 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 await options.onLogout(accessToken);
             }
 
+            res.clearCookie(process.env.REFRESH_COOKIE_NAME as string, {
+                path: '/api/auth/refresh',
+                domain: process.env.COOKIE_DOMAIN
+            });
+
             res.json({ success: true, message: 'Logged out' });
         } catch (error: any) {
             console.warn('[BigsoAuthSDK] Failed to logout in SSO Backend.', error.message);
+
+            res.clearCookie(process.env.REFRESH_COOKIE_NAME as string, {
+                path: '/api/auth/refresh',
+                domain: process.env.COOKIE_DOMAIN
+            });
+
             res.json({ success: true, message: 'Logged out (backend revocation failed)' });
         }
     });
 
     return router;
 }
+
+

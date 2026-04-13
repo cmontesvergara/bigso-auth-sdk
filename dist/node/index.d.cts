@@ -1,4 +1,4 @@
-import { b as SsoTokenPayload, c as V2LoginResponse, V as V2ExchangeResponse, d as V2RefreshResponse } from '../types-B51l8wWh.cjs';
+import { b as SsoTokenPayload, c as V2LoginResponse, V as V2ExchangeResponse, d as V2RefreshResponse } from '../types-sI7dMCGy.cjs';
 
 interface SsoClientOptions {
     ssoBackendUrl: string;
@@ -16,6 +16,7 @@ declare class BigsoSsoClient {
     exchangeCode(code: string, codeVerifier: string): Promise<V2ExchangeResponse>;
     refreshTokens(refreshToken?: string): Promise<V2RefreshResponse>;
     logout(accessToken: string, revokeAll?: boolean): Promise<void>;
+    session(accessToken: string, sessionId: string, appId: string): Promise<any>;
 }
 
 export { BigsoSsoClient, type SsoClientOptions };

@@ -34,15 +34,6 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
                 return;
             }
 
-             const selectedTenantId = payload.tenantId;
-            const tenantInfo =  payload.tenants.find(t => t.id === selectedTenantId) 
-            req.user = {
-                userId: payload.sub,
-                email: '',
-                firstName: '',
-                lastName: '',
-            };
-            req.tenant = tenantInfo;
             req.tokenPayload = payload;
 
             next();

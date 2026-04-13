@@ -139,6 +139,21 @@ var BigsoSsoClient = class {
       throw new Error(err.message || "Logout failed");
     }
   }
+  async session(accessToken, sessionId, appId) {
+    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({ sessionId, appId }),
+      credentials: "include"
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Session validate failed");
+    }
+  }
 };
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
