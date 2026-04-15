@@ -59,7 +59,10 @@ function ssoSyncGuardMiddleware(options) {
 
 // src/express/routes/createSsoAuthRouter.ts
 import { Router } from "express";
-function validateRequiredEnvs() {
+function validateRequiredEnvs(cookieConfig) {
+  if (cookieConfig) {
+    return;
+  }
   const requiredEnvs = ["COOKIE_DOMAIN", "COOKIE_SAMESITE"];
   const missingEnvs = requiredEnvs.filter((env) => !process.env[env]);
   if (missingEnvs.length > 0) {
@@ -109,6 +112,18 @@ function createSsoAuthRouter(options) {
         return;
       }
       const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
+      if (options.cookieConfig && ssoResponse.tokens?.refreshToken) {
+        const cookieConfig = options.cookieConfig;
+        const maxAge = cookieConfig.maxAge || 7 * 24 * 60 * 60 * 1e3;
+        res.cookie(cookieConfig.name, ssoResponse.tokens.refreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: cookieConfig.sameSite,
+          path: cookieConfig.path,
+          maxAge,
+          domain: cookieConfig.domain
+        });
+      }
       if (options.onLoginSuccess) {
         await options.onLoginSuccess(ssoResponse);
       }
@@ -137,18 +152,27 @@ function createSsoAuthRouter(options) {
     });
   });
   router.post("/refresh", async (req, res) => {
-    const refreshTokenCookieName = extractCookieNameFromMap(req.cookies?.["bs_cookie_name_map"], "refreshToken");
+    const cookieConfig = options.cookieConfig;
+    const refreshTokenCookieName = cookieConfig ? cookieConfig.name : extractCookieNameFromMap(req.cookies?.["bs_cookie_name_map"], "refreshToken");
+    const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
+    const cookiePath = cookieConfig ? cookieConfig.path : "/api/auth/refresh";
+    const cookieSameSite = cookieConfig ? cookieConfig.sameSite : process.env.COOKIE_SAMESITE;
     try {
-      const refreshToken = extractCookieValueFromMap(req.cookies?.["bs_cookie_name_map"], "refreshToken");
+      const refreshToken = cookieConfig ? req.cookies?.[cookieConfig.name] : extractCookieValueFromMap(req.cookies?.["bs_cookie_name_map"], "refreshToken");
+      if (!refreshToken) {
+        res.status(401).json({ error: "No refresh token available" });
+        return;
+      }
       const ssoResponse = await options.ssoClient.refreshTokens(refreshToken);
       if (ssoResponse.tokens?.refreshToken) {
+        const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1e3;
         res.cookie(refreshTokenCookieName, ssoResponse.tokens.refreshToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.COOKIE_SAMESITE,
-          path: "/api/auth/refresh",
-          maxAge: 7 * 24 * 60 * 60 * 1e3,
-          domain: process.env.COOKIE_DOMAIN
+          sameSite: cookieSameSite,
+          path: cookiePath,
+          maxAge,
+          domain: cookieDomain
         });
       } else {
         console.warn("[BigsoAuthSDK] No refresh token received in refresh response, not setting cookie");
@@ -161,8 +185,8 @@ function createSsoAuthRouter(options) {
       console.error("[BigsoAuthSDK] Error refreshing tokens:", error.message);
       if (error.message?.includes("revoked") || error.message?.includes("expired") || error.message?.includes("Invalid")) {
         res.clearCookie(refreshTokenCookieName, {
-          path: "/api/auth/refresh",
-          domain: process.env.COOKIE_DOMAIN
+          path: cookiePath,
+          domain: cookieDomain
         });
       }
       res.status(401).json({ error: error.message || "Failed to refresh tokens" });
@@ -176,16 +200,24 @@ function createSsoAuthRouter(options) {
       if (options.onLogout) {
         await options.onLogout(accessToken);
       }
-      res.clearCookie(process.env.REFRESH_COOKIE_NAME, {
-        path: "/api/auth/refresh",
-        domain: process.env.COOKIE_DOMAIN
+      const cookieConfig = options.cookieConfig;
+      const cookieName = cookieConfig ? cookieConfig.name : process.env.REFRESH_COOKIE_NAME;
+      const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
+      const cookiePath = cookieConfig ? cookieConfig.path : "/api/auth/refresh";
+      res.clearCookie(cookieName, {
+        path: cookiePath,
+        domain: cookieDomain
       });
       res.json({ success: true, message: "Logged out" });
     } catch (error) {
       console.warn("[BigsoAuthSDK] Failed to logout in SSO Backend.", error.message);
-      res.clearCookie(process.env.REFRESH_COOKIE_NAME, {
-        path: "/api/auth/refresh",
-        domain: process.env.COOKIE_DOMAIN
+      const cookieConfig = options.cookieConfig;
+      const cookieName = cookieConfig ? cookieConfig.name : process.env.REFRESH_COOKIE_NAME;
+      const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
+      const cookiePath = cookieConfig ? cookieConfig.path : "/api/auth/refresh";
+      res.clearCookie(cookieName, {
+        path: cookiePath,
+        domain: cookieDomain
       });
       res.json({ success: true, message: "Logged out (backend revocation failed)" });
     }

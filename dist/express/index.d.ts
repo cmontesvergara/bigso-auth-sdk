@@ -27,11 +27,25 @@ interface SsoSyncGuardOptions {
 }
 declare function ssoSyncGuardMiddleware(options: SsoSyncGuardOptions): (req: Request, res: Response, next: NextFunction) => Promise<void>;
 
+interface CookieConfig {
+    name: string;
+    domain: string;
+    path: string;
+    sameSite: 'strict' | 'lax' | 'none';
+    maxAge?: number;
+}
 interface CreateSsoAuthRouterOptions {
     ssoClient: BigsoSsoClient;
     frontendUrl: string;
     onLoginSuccess?: (session: V2ExchangeResponse) => void | Promise<void>;
     onLogout?: (accessToken: string) => void | Promise<void>;
+    /**
+     * Configuración de cookies personalizadas.
+     * Si se proporciona, el router usará esta cookie en lugar de extraer
+     * el nombre desde bs_cookie_name_map.
+     * Esto permite que apps satélite tengan su propia cookie de refresh token.
+     */
+    cookieConfig?: CookieConfig;
 }
 declare function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router;
 
@@ -43,4 +57,4 @@ interface SsoSyncRouterOptions {
 }
 declare function createSsoSyncRouter(options: SsoSyncRouterOptions): Router;
 
-export { type CreateSsoAuthRouterOptions, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createSsoAuthRouter, createSsoSyncRouter, ssoAuthMiddleware, ssoSyncGuardMiddleware };
+export { type CookieConfig, type CreateSsoAuthRouterOptions, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createSsoAuthRouter, createSsoSyncRouter, ssoAuthMiddleware, ssoSyncGuardMiddleware };
