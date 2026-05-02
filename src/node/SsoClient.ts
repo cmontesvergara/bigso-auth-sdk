@@ -77,13 +77,15 @@ export class BigsoSsoClient {
         return await response.json() as V2ExchangeResponse;
     }
 
-    async refreshTokens(refreshToken?: string): Promise<V2RefreshResponse> {
+    async refreshTokens(refreshToken: string, tenantId: string): Promise<V2RefreshResponse> {
+        console.log('TENANT EN refreshTokens:', tenantId);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
 
         // If refreshToken is provided, include it in the body
         // Otherwise, rely on cookies (credentials: 'include')
-        const body = refreshToken ? JSON.stringify({ refreshToken }) : undefined;
-
+        const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
+        console.log('🔄 Refreshing tokens with payload:', { refreshToken, appId: this.appId, tenantId: tenantId });
         const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
             method: 'POST',
             headers,
@@ -115,20 +117,28 @@ export class BigsoSsoClient {
             throw new Error(err.message || 'Logout failed');
         }
     }
-    async session(accessToken: string, sessionId: string, appId: string): Promise<any> {
+    async session(sessionId: string, appId: string): Promise<any> {
         const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ sessionId, appId }),
+            body: JSON.stringify({ sessionId: sessionId, appId: appId }),
             credentials: 'include',
         });
 
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error(err.message || 'Session validate failed');
+        }
+        return await response.json() as any;
+    }
+
+    getClientOptions(): SsoClientOptions {
+        return {
+            ssoBackendUrl: this.ssoBackendUrl,
+            ssoJwksUrl: this.ssoJwksUrl,
+            appId: this.appId,
         }
     }
 }

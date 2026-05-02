@@ -1,14 +1,18 @@
 import { Router } from 'express';
-import type { BigsoSsoClient } from '../../node/SsoClient';
+import { BigsoSsoClient } from '../../node/SsoClient';
 import type { V2ExchangeResponse } from '../../types';
 import { ssoAuthMiddleware } from '../middlewares/ssoAuth';
 
 export interface CookieConfig {
-    name: string;
+    sessionName: string;
+    refreshName: string;
+    permissionName: string;
     domain: string;
-    path: string;
+    sessionPath: string;
+    refreshPath: string;
+    permissionPath: string;
     sameSite: 'strict' | 'lax' | 'none';
-    maxAge?: number; // milliseconds, default: 7 days
+    maxAge: number;
 }
 
 export interface CreateSsoAuthRouterOptions {
@@ -25,48 +29,19 @@ export interface CreateSsoAuthRouterOptions {
     cookieConfig?: CookieConfig;
 }
 
-function validateRequiredEnvs(cookieConfig?: CookieConfig) {
-    // Si hay cookieConfig personalizada, no requerimos variables de entorno del SSO
-    if (cookieConfig) {
-        return;
-    }
-    const requiredEnvs = ['COOKIE_DOMAIN', 'COOKIE_SAMESITE'];
-    const missingEnvs = requiredEnvs.filter(env => !process.env[env]);
-    if (missingEnvs.length > 0) {
-        throw new Error(`Missing required environment variables: ${missingEnvs.join(', ')}`);
-    }
-}
 
-function extractCookieValueFromMap(cookieMapStr: string | undefined, key: string): string | null {
-    if (!cookieMapStr) return null;
-
-    try {
-        const cookieMap = JSON.parse(cookieMapStr);
-        const entry = cookieMap.find((item: string) => item.startsWith(`${key}:`));
-        return entry ? entry.split(':')[1] : null;
-    } catch (error) {
-        console.warn('[BigsoAuthSDK] Failed to parse cookie name map:', error);
-        return null;
-    }
-}
-function extractCookieNameFromMap(cookieMapStr: string | undefined, key: string): string | null {
-    if (!cookieMapStr) return null;
-
-    try {
-        const cookieMap = JSON.parse(cookieMapStr);
-        const entry = cookieMap.find((item: string) => item.startsWith(`${key}:`));
-        return entry ? entry.split(':')[0] : null;
-    } catch (error) {
-        console.warn('[BigsoAuthSDK] Failed to parse cookie name map:', error);
-        return null;
-    }
+function serializePermissions(permissions: any[]): string {
+    return permissions
+        .map(p => `${p.resource}:${p.action}`)
+        .join(",");
 }
 
 export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router {
-    validateRequiredEnvs();
     const router = Router();
 
-    router.post('/exchange-v2', async (req: import('express').Request, res: import('express').Response) => {
+    router.post('/exchange', async (req: import('express').Request, res: import('express').Response) => {
+
+        console.log('[BigsoAuthSDK] Received /exchange-v2 request with body:', req.body);
         try {
             const { payload, codeVerifier: codeVerifierFromBody } = req.body;
             if (!payload) {
@@ -89,15 +64,35 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
 
             // Si hay cookieConfig personalizada, establecer cookie propia de la app
-            if (options.cookieConfig && ssoResponse.tokens?.refreshToken) {
+            if (options.cookieConfig) {
+                console.log('[BigsoAuthSDK] Setting refresh token cookie with custom config:', options.cookieConfig);
+
                 const cookieConfig = options.cookieConfig;
-                const maxAge = cookieConfig.maxAge || 7 * 24 * 60 * 60 * 1000; // 7 days default
-                res.cookie(cookieConfig.name, ssoResponse.tokens.refreshToken, {
+
+                res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: cookieConfig.sameSite,
-                    path: cookieConfig.path,
-                    maxAge: maxAge,
+                    path: cookieConfig.sessionPath,
+                    maxAge: cookieConfig.maxAge,
+                    domain: cookieConfig.domain
+                });
+
+                res.cookie(cookieConfig.refreshName, ssoResponse.tokens.refreshToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: cookieConfig.sameSite,
+                    path: cookieConfig.refreshPath,
+                    maxAge: cookieConfig.maxAge,
+                    domain: cookieConfig.domain
+                });
+
+                res.cookie(cookieConfig.permissionName, serializePermissions(ssoResponse.currentTenant.permissions), {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: cookieConfig.sameSite,
+                    path: cookieConfig.permissionPath,
+                    maxAge: cookieConfig.maxAge,
                     domain: cookieConfig.domain
                 });
             }
@@ -105,55 +100,52 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             if (options.onLoginSuccess) {
                 await options.onLoginSuccess(ssoResponse);
             }
-
-            res.json({
-                success: true,
-                tokens: ssoResponse.tokens,
-                user: ssoResponse.user,
-                currentTenant: ssoResponse.currentTenant,
-                relatedTenants: ssoResponse.relatedTenants,
-            });
+            delete (ssoResponse as any).tokens.refreshToken;
+            res.json(ssoResponse);
         } catch (error: any) {
             console.error('[BigsoAuthSDK] Error exchanging v2 payload:', error.message);
             res.status(401).json({ error: error.message || 'Failed to verify signed payload' });
         }
     });
 
-    router.post('/session', ssoAuthMiddleware({ ssoClient: options.ssoClient }), async (req: import('express').Request, res: import('express').Response) => {
+    router.get('/session', async (req: import('express').Request, res: import('express').Response) => {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
-
-        const sessionId = extractCookieValueFromMap(req.cookies?.['bs_cookie_name_map'], 'sessionId');
-        const ssoSession = await options.ssoClient.session(req.headers.authorization?.substring(7) as string, sessionId as string, req.tokenPayload?.appId as string);
-        res.json({
-            success: true,
-            ...ssoSession,
-            tokenPayload: req.tokenPayload,
-        });
+        if (options.cookieConfig) {
+            console.log('[BigsoAuthSDK] session config', options.cookieConfig);
+            const cookieConfig = options.cookieConfig;
+            const sessionId = req.cookies[cookieConfig.sessionName] as string
+            const ssoclientOptions = options.ssoClient.getClientOptions();
+            const ssoSession = await options.ssoClient.session(sessionId, ssoclientOptions.appId);
+            res.json({
+                success: true,
+                ...ssoSession
+            });
+        }
     });
 
     router.post('/refresh', async (req: import('express').Request, res: import('express').Response) => {
         // Determinar fuente del refresh token: cookie personalizada o mapa del SSO
+
+        console.log('[BigsoAuthSDK] Received /refresh request. Cookies:', req.cookies);
+        console.log('[BigsoAuthSDK] headers:', req.headers);
         const cookieConfig = options.cookieConfig;
-        const refreshTokenCookieName = cookieConfig 
-            ? cookieConfig.name 
-            : extractCookieNameFromMap(req.cookies?.['bs_cookie_name_map'], 'refreshToken') as string;
+        const refreshTokenCookieName = req.cookies?.[cookieConfig?.refreshName as string]
         const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
-        const cookiePath = cookieConfig ? cookieConfig.path : '/api/auth/refresh';
+        const cookiePath = cookieConfig?.refreshPath;
         const cookieSameSite = cookieConfig ? cookieConfig.sameSite : process.env.COOKIE_SAMESITE as 'strict' | 'lax' | 'none';
 
         try {
-            const refreshToken = cookieConfig 
-                ? req.cookies?.[cookieConfig.name] as string
-                : extractCookieValueFromMap(req.cookies?.['bs_cookie_name_map'], 'refreshToken') as string;
+            const refreshToken = req.cookies?.[cookieConfig?.refreshName as string]
 
             if (!refreshToken) {
                 res.status(401).json({ error: 'No refresh token available' });
                 return;
             }
-
-            const ssoResponse = await options.ssoClient.refreshTokens(refreshToken);
+            const tenantId = req.headers['x-tenant-id']?.toString() || '';
+            console.log('TENANT ANTES DE ENVIAR:', tenantId);
+            const ssoResponse = await options.ssoClient.refreshTokens(refreshToken, tenantId);
 
             if (ssoResponse.tokens?.refreshToken) {
                 const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
@@ -199,35 +191,27 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
             // Usar cookieConfig personalizada o fallback a variables de entorno
             const cookieConfig = options.cookieConfig;
-            const cookieName = cookieConfig ? cookieConfig.name : process.env.REFRESH_COOKIE_NAME as string;
-            const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
-            const cookiePath = cookieConfig ? cookieConfig.path : '/api/auth/refresh';
 
-            res.clearCookie(cookieName, {
-                path: cookiePath,
-                domain: cookieDomain
-            });
-
-            res.json({ success: true, message: 'Logged out' });
+            for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
+                if (cookieName) {
+                    res.clearCookie(cookieName);
+                }
+            }
         } catch (error: any) {
             console.warn('[BigsoAuthSDK] Failed to logout in SSO Backend.', error.message);
-
-            // Usar cookieConfig personalizada o fallback a variables de entorno
             const cookieConfig = options.cookieConfig;
-            const cookieName = cookieConfig ? cookieConfig.name : process.env.REFRESH_COOKIE_NAME as string;
-            const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
-            const cookiePath = cookieConfig ? cookieConfig.path : '/api/auth/refresh';
-
-            res.clearCookie(cookieName, {
-                path: cookiePath,
-                domain: cookieDomain
-            });
-
-            res.json({ success: true, message: 'Logged out (backend revocation failed)' });
+            for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
+                if (cookieName) {
+                    res.clearCookie(cookieName);
+                }
+            }
         }
     });
 
     return router;
 }
+
+
+
 
 

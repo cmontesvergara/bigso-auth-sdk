@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.js';
-import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from '../types-sI7dMCGy.js';
+import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from '../types-BHCbfxC3.js';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -28,11 +28,15 @@ interface SsoSyncGuardOptions {
 declare function ssoSyncGuardMiddleware(options: SsoSyncGuardOptions): (req: Request, res: Response, next: NextFunction) => Promise<void>;
 
 interface CookieConfig {
-    name: string;
+    sessionName: string;
+    refreshName: string;
+    permissionName: string;
     domain: string;
-    path: string;
+    sessionPath: string;
+    refreshPath: string;
+    permissionPath: string;
     sameSite: 'strict' | 'lax' | 'none';
-    maxAge?: number;
+    maxAge: number;
 }
 interface CreateSsoAuthRouterOptions {
     ssoClient: BigsoSsoClient;

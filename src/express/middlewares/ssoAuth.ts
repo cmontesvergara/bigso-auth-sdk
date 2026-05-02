@@ -28,7 +28,7 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
             const accessToken = authHeader.substring(7);
 
             const payload = await options.ssoClient.validateAccessToken(accessToken);
-
+            console.log('[BigsoAuthSDK] Access Token Payload:', payload);
             if (!payload) {
                 res.status(401).json({ error: 'Invalid or expired access token' });
                 return;

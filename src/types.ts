@@ -89,6 +89,7 @@ export interface V2LoginResponse {
 export interface V2ExchangeResponse {
     success: boolean
     tokens: {
+        jti: string
         accessToken: string
         refreshToken: string
         expiresIn: number

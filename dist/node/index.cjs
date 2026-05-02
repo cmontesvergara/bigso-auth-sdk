@@ -47,8 +47,8 @@ async function verifyAccessToken(accessToken, jwksUrl) {
     exp: payload.exp,
     iat: payload.iat,
     tenants: payload.tenants || [],
-    tenantId: payload.tenantId || "",
-    systemRole: payload.systemRole || "user",
+    tenantId: payload["https://bigso.co/tenant_id"] || payload.tenantId || "",
+    systemRole: payload["https://bigso.co/role"] || payload.systemRole || "user",
     scope: payload.scope,
     deviceFingerprint: payload.deviceFingerprint
   };
@@ -109,9 +109,11 @@ var BigsoSsoClient = class {
     }
     return await response.json();
   }
-  async refreshTokens(refreshToken) {
+  async refreshTokens(refreshToken, tenantId) {
+    console.log("TENANT EN refreshTokens:", tenantId);
     const headers = { "Content-Type": "application/json" };
-    const body = refreshToken ? JSON.stringify({ refreshToken }) : void 0;
+    const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
+    console.log("\u{1F504} Refreshing tokens with payload:", { refreshToken, appId: this.appId, tenantId });
     const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
       method: "POST",
       headers,
@@ -139,12 +141,11 @@ var BigsoSsoClient = class {
       throw new Error(err.message || "Logout failed");
     }
   }
-  async session(accessToken, sessionId, appId) {
+  async session(sessionId, appId) {
     const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${accessToken}`
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({ sessionId, appId }),
       credentials: "include"
@@ -153,6 +154,14 @@ var BigsoSsoClient = class {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.message || "Session validate failed");
     }
+    return await response.json();
+  }
+  getClientOptions() {
+    return {
+      ssoBackendUrl: this.ssoBackendUrl,
+      ssoJwksUrl: this.ssoJwksUrl,
+      appId: this.appId
+    };
   }
 };
 // Annotate the CommonJS export names for ESM import in node:
