@@ -7,6 +7,10 @@ export interface BigsoAuthOptions {
     redirectUri?: string
     tenantHint?: string
     theme?: 'light' | 'dark'
+    /** Expected audience for signed payload verification.
+     *  Defaults to window.location.origin if not provided.
+     *  Set this explicitly to avoid environment-dependent mismatches. */
+    audience?: string
 }
 
 export interface SsoInitPayload {

@@ -1,10 +1,10 @@
-import { sha256Base64Url, generateVerifier, generateRandomId } from '../utils/crypto'
+import type { BigsoAuthOptions, BigsoAuthResult, SsoErrorPayload, SsoInitPayload, SsoSuccessPayload, SsoTenant } from '../types'
+import { generateRandomId, generateVerifier, sha256Base64Url } from '../utils/crypto'
 import { EventEmitter } from '../utils/events'
 import { verifySignedPayload } from '../utils/jws'
-import type { BigsoAuthOptions, SsoInitPayload, SsoSuccessPayload, SsoErrorPayload, BigsoAuthResult, SsoTenant } from '../types'
 
 export class BigsoAuth extends EventEmitter {
-    private options: Required<BigsoAuthOptions>
+    private options: Required<Omit<BigsoAuthOptions, 'audience'>> & Pick<BigsoAuthOptions, 'audience'>
     private iframe?: HTMLIFrameElement
     private authCompleted = false
     private requestId = generateRandomId()
@@ -126,7 +126,7 @@ export class BigsoAuth extends EventEmitter {
                         const decoded = await verifySignedPayload(
                             payload.signed_payload,
                             this.options.jwksUrl,
-                            window.location.origin
+                            this.options.audience ?? window.location.origin
                         )
 
                         if (decoded.nonce !== ctx.nonce) {
