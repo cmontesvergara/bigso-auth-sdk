@@ -167,7 +167,7 @@ var BigsoAuth = class extends EventEmitter {
             const decoded = await verifySignedPayload(
               payload.signed_payload,
               this.options.jwksUrl,
-              window.location.origin
+              this.options.audience ?? window.location.origin
             );
             if (decoded.nonce !== ctx.nonce) {
               throw new Error("Invalid nonce");

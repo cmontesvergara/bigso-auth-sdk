@@ -1,4 +1,4 @@
-import { B as BigsoAuthOptions, a as BigsoAuthResult } from '../types-BHCbfxC3.cjs';
+import { B as BigsoAuthOptions, a as BigsoAuthResult } from '../types-Y2yH3pEh.cjs';
 
 declare class EventEmitter {
     private events;
