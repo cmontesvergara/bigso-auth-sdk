@@ -5,7 +5,7 @@ export interface BigsoAuthOptions {
     timeout?: number
     debug?: boolean
     redirectUri?: string
-    tenantHint?: string
+    tenantId: string
     theme?: 'light' | 'dark'
     /** Expected audience for signed payload verification.
      *  Defaults to window.location.origin if not provided.
@@ -20,7 +20,7 @@ export interface SsoInitPayload {
     code_challenge_method: 'S256'
     origin: string
     redirect_uri?: string
-    tenant_hint?: string
+    tenantId?: string
     timeout_ms?: number
 }
 

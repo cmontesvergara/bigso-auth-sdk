@@ -50,7 +50,6 @@ var BigsoAuth = class extends EventEmitter {
       timeout: 5e3,
       debug: false,
       redirectUri: "",
-      tenantHint: "",
       theme: "light",
       ...options
     };
@@ -103,6 +102,14 @@ var BigsoAuth = class extends EventEmitter {
               reject(new Error("Timeout"));
             }
           }, this.options.timeout);
+          let isValidTenantId = true;
+          if (this.options.tenantId) {
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(this.options.tenantId)) {
+              isValidTenantId = false;
+              this.debug("tenantId proporcionado no es un UUID v\xE1lido:", this.options.tenantId);
+            }
+          }
           const initPayload = {
             state,
             nonce,
@@ -110,7 +117,7 @@ var BigsoAuth = class extends EventEmitter {
             code_challenge_method: "S256",
             origin: window.location.origin,
             ...this.options.redirectUri && { redirect_uri: this.options.redirectUri },
-            ...this.options.tenantHint && { tenant_hint: this.options.tenantHint },
+            tenantId: isValidTenantId ? this.options.tenantId : void 0,
             timeout_ms: this.options.timeout
           };
           this.iframe?.contentWindow?.postMessage({
@@ -228,7 +235,7 @@ var BigsoAuth = class extends EventEmitter {
     }
     this.iframe = document.createElement("iframe");
     this.iframe.className = "sso-frame";
-    this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}`;
+    this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}&tenant_id=${this.options.tenantId}`;
     this.iframe.setAttribute("title", "SSO Login");
     this.overlayEl.appendChild(this.iframe);
     this.debug("Iframe creado", this.iframe.src);
