@@ -149,7 +149,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
             if (ssoResponse.tokens?.refreshToken) {
                 const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
-                res.cookie(refreshTokenCookieName, ssoResponse.tokens.refreshToken, {
+                res.cookie(cookieConfig?.refreshName as string, ssoResponse.tokens.refreshToken, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: cookieSameSite,
@@ -169,7 +169,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             console.error('[BigsoAuthSDK] Error refreshing tokens:', error.message);
 
             if (error.message?.includes('revoked') || error.message?.includes('expired') || error.message?.includes('Invalid')) {
-                res.clearCookie(refreshTokenCookieName, {
+                res.clearCookie(cookieConfig?.refreshName as string, {
                     path: cookiePath,
                     domain: cookieDomain
                 });
