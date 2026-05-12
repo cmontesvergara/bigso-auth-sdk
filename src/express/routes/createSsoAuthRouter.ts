@@ -131,7 +131,6 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         console.log('[BigsoAuthSDK] Received /refresh request. Cookies:', req.cookies);
         console.log('[BigsoAuthSDK] headers:', req.headers);
         const cookieConfig = options.cookieConfig;
-        const refreshTokenCookieName = req.cookies?.[cookieConfig?.refreshName as string]
         const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
         const cookiePath = cookieConfig?.refreshPath;
         const cookieSameSite = cookieConfig ? cookieConfig.sameSite : process.env.COOKIE_SAMESITE as 'strict' | 'lax' | 'none';
@@ -146,9 +145,9 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const tenantId = req.headers['x-tenant-id']?.toString() || '';
             console.log('TENANT ANTES DE ENVIAR:', tenantId);
             const ssoResponse = await options.ssoClient.refreshTokens(refreshToken, tenantId);
+            const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
 
             if (ssoResponse.tokens?.refreshToken) {
-                const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
                 res.cookie(cookieConfig?.refreshName as string, ssoResponse.tokens.refreshToken, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
@@ -157,10 +156,29 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                     maxAge: maxAge,
                     domain: cookieDomain
                 });
-
             } else {
                 console.warn('[BigsoAuthSDK] No refresh token received in refresh response, not setting cookie');
             }
+
+            // ── Re-write permissions cookie after refresh ─────────────────────────
+            // The RBAC middleware reads permissions from this cookie on every request.
+            // If we skip updating it here, it becomes stale or expires independently,
+            // causing 403s even when the user has valid permissions in sso-core.
+            const currentTenant = ssoResponse.currentTenant;
+            if (cookieConfig && currentTenant && currentTenant.permissions?.length > 0) {
+                res.cookie(cookieConfig.permissionName, serializePermissions(currentTenant.permissions), {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: cookieSameSite,
+                    path: cookieConfig.permissionPath,
+                    maxAge: maxAge,
+                    domain: cookieDomain
+                });
+                console.log(`[BigsoAuthSDK] Refreshed permissions cookie for tenant ${currentTenant.id} with ${currentTenant.permissions.length} permissions`);
+            } else if (cookieConfig) {
+                console.warn('[BigsoAuthSDK] No permissions received in refresh response — permissions cookie NOT updated');
+            }
+
             res.json({
                 success: true,
                 tokens: ssoResponse.tokens,

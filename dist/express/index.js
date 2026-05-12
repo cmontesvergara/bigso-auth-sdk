@@ -142,7 +142,6 @@ function createSsoAuthRouter(options) {
     console.log("[BigsoAuthSDK] Received /refresh request. Cookies:", req.cookies);
     console.log("[BigsoAuthSDK] headers:", req.headers);
     const cookieConfig = options.cookieConfig;
-    const refreshTokenCookieName = req.cookies?.[cookieConfig?.refreshName];
     const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
     const cookiePath = cookieConfig?.refreshPath;
     const cookieSameSite = cookieConfig ? cookieConfig.sameSite : process.env.COOKIE_SAMESITE;
@@ -155,8 +154,8 @@ function createSsoAuthRouter(options) {
       const tenantId = req.headers["x-tenant-id"]?.toString() || "";
       console.log("TENANT ANTES DE ENVIAR:", tenantId);
       const ssoResponse = await options.ssoClient.refreshTokens(refreshToken, tenantId);
+      const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1e3;
       if (ssoResponse.tokens?.refreshToken) {
-        const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1e3;
         res.cookie(cookieConfig?.refreshName, ssoResponse.tokens.refreshToken, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -167,6 +166,20 @@ function createSsoAuthRouter(options) {
         });
       } else {
         console.warn("[BigsoAuthSDK] No refresh token received in refresh response, not setting cookie");
+      }
+      const currentTenant = ssoResponse.currentTenant;
+      if (cookieConfig && currentTenant && currentTenant.permissions?.length > 0) {
+        res.cookie(cookieConfig.permissionName, serializePermissions(currentTenant.permissions), {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: cookieSameSite,
+          path: cookieConfig.permissionPath,
+          maxAge,
+          domain: cookieDomain
+        });
+        console.log(`[BigsoAuthSDK] Refreshed permissions cookie for tenant ${currentTenant.id} with ${currentTenant.permissions.length} permissions`);
+      } else if (cookieConfig) {
+        console.warn("[BigsoAuthSDK] No permissions received in refresh response \u2014 permissions cookie NOT updated");
       }
       res.json({
         success: true,

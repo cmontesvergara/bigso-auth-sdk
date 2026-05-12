@@ -110,6 +110,7 @@ export interface V2RefreshResponse {
         expiresIn: number
         refreshToken?: string
     }
+    currentTenant?: SsoTenant
 }
 
 export interface V2AuthorizeResponse {
