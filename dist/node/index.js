@@ -10,6 +10,41 @@ var BigsoSsoClient = class {
     this.appId = options.appId;
     this.ssoJwksUrl = options.ssoJwksUrl;
   }
+  async performFetch(url, options, operation) {
+    console.log(`[BigsoSsoClient] \u{1F680} START ${operation} | URL: ${url}`);
+    console.log(`[BigsoSsoClient] \u{1F4E6} Request Body:`, options.body);
+    try {
+      const response = await fetch(url, options);
+      console.log(`[BigsoSsoClient] \u{1F4E5} END ${operation} | Status: ${response.status} ${response.statusText}`);
+      const responseHeaders = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      console.log(`[BigsoSsoClient] \u{1F4D1} Response Headers:`, responseHeaders);
+      const text = await response.text();
+      console.log(`[BigsoSsoClient] \u{1F4C4} Response Body (${text.length} bytes):`, text ? text.substring(0, 1500) : "<empty>");
+      if (!response.ok) {
+        let err = {};
+        try {
+          err = JSON.parse(text);
+        } catch {
+          err = { message: `Raw text: ${text.substring(0, 250)}` };
+        }
+        const errorMsg = err.message || `${operation} failed (status: ${response.status})`;
+        console.error(`[BigsoSsoClient] \u274C Error in ${operation}:`, errorMsg, " | Details:", err);
+        throw new Error(errorMsg);
+      }
+      if (!text) return null;
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    } catch (error) {
+      console.error(`[BigsoSsoClient] \u{1F4A5} Fatal Fetch Error in ${operation}:`, error.message);
+      throw error;
+    }
+  }
   async verifySignedPayload(token, expectedAudience) {
     if (!this.ssoJwksUrl) {
       throw new Error("ssoJwksUrl is required for verifySignedPayload");
@@ -29,20 +64,15 @@ var BigsoSsoClient = class {
   async login(emailOrNuid, password) {
     const isEmail = emailOrNuid.includes("@");
     const payload = isEmail ? { email: emailOrNuid, password } : { nuid: emailOrNuid, password };
-    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/login`, {
+    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       credentials: "include"
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Login failed");
-    }
-    return await response.json();
+    }, "login");
   }
   async exchangeCode(code, codeVerifier) {
-    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/exchange`, {
+    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -51,32 +81,22 @@ var BigsoSsoClient = class {
         codeVerifier
       }),
       credentials: "include"
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Token exchange failed");
-    }
-    return await response.json();
+    }, "exchangeCode");
   }
   async refreshTokens(refreshToken, tenantId) {
     console.log("TENANT EN refreshTokens:", tenantId);
     const headers = { "Content-Type": "application/json" };
     const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
     console.log("\u{1F504} Refreshing tokens with payload:", { refreshToken, appId: this.appId, tenantId });
-    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
+    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
       method: "POST",
       headers,
       body,
       credentials: "include"
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Token refresh failed");
-    }
-    return await response.json();
+    }, "refreshTokens");
   }
   async logout(accessToken, revokeAll = false) {
-    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/logout`, {
+    await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/logout`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -84,26 +104,17 @@ var BigsoSsoClient = class {
       },
       body: JSON.stringify({ revokeAll }),
       credentials: "include"
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Logout failed");
-    }
+    }, "logout");
   }
   async session(sessionId, appId) {
-    const response = await fetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
+    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ sessionId, appId }),
       credentials: "include"
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Session validate failed");
-    }
-    return await response.json();
+    }, "session");
   }
   getClientOptions() {
     return {

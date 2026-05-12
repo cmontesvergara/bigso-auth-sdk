@@ -10,6 +10,7 @@ declare class BigsoSsoClient {
     private appId;
     private ssoJwksUrl?;
     constructor(options: SsoClientOptions);
+    private performFetch;
     verifySignedPayload(token: string, expectedAudience: string): Promise<any>;
     validateAccessToken(accessToken: string): Promise<SsoTokenPayload | null>;
     login(emailOrNuid: string, password: string): Promise<V2LoginResponse>;
