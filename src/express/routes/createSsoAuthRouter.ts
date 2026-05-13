@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { BigsoSsoClient } from '../../node/SsoClient';
 import type { V2ExchangeResponse } from '../../types';
-import { ssoAuthMiddleware } from '../middlewares/ssoAuth';
 
 export interface CookieConfig {
     sessionName: string;
@@ -196,12 +195,18 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         }
     });
 
-    router.post('/logout', ssoAuthMiddleware({ ssoClient: options.ssoClient }), async (req: import('express').Request, res: import('express').Response) => {
-        try {
-            const accessToken = req.headers.authorization?.substring(7) || '';
-            const { revokeAll = false } = req.body || {};
+    router.post('/logout', async (req: import('express').Request, res: import('express').Response) => {
+        const accessToken = req.headers.authorization?.startsWith('Bearer ')
+            ? req.headers.authorization.substring(7)
+            : '';
 
-            await options.ssoClient.logout(accessToken, revokeAll);
+        try {
+            if (accessToken) {
+                // Only attempt SSO-core revocation when we actually have a token
+                await options.ssoClient.logout(accessToken, req.body?.revokeAll ?? false);
+            } else {
+                console.warn('[BigsoAuthSDK] Logout called without access token — skipping SSO-core revocation, clearing cookies anyway.');
+            }
 
             if (options.onLogout) {
                 await options.onLogout(accessToken);

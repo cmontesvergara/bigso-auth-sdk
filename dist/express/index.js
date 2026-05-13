@@ -196,11 +196,14 @@ function createSsoAuthRouter(options) {
       res.status(401).json({ error: error.message || "Failed to refresh tokens" });
     }
   });
-  router.post("/logout", ssoAuthMiddleware({ ssoClient: options.ssoClient }), async (req, res) => {
+  router.post("/logout", async (req, res) => {
+    const accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
     try {
-      const accessToken = req.headers.authorization?.substring(7) || "";
-      const { revokeAll = false } = req.body || {};
-      await options.ssoClient.logout(accessToken, revokeAll);
+      if (accessToken) {
+        await options.ssoClient.logout(accessToken, req.body?.revokeAll ?? false);
+      } else {
+        console.warn("[BigsoAuthSDK] Logout called without access token \u2014 skipping SSO-core revocation, clearing cookies anyway.");
+      }
       if (options.onLogout) {
         await options.onLogout(accessToken);
       }
