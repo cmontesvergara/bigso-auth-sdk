@@ -233,19 +233,18 @@ function createSsoAuthRouter(options) {
       if (options.onLogout) {
         await options.onLogout(accessToken);
       }
-      const cookieConfig = options.cookieConfig;
-      for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
-        if (cookieName) {
-          res.clearCookie(cookieName);
-        }
-      }
     } catch (error) {
       console.warn("[BigsoAuthSDK] Failed to logout in SSO Backend.", error.message);
+    } finally {
       const cookieConfig = options.cookieConfig;
+      const clearOpts = cookieConfig ? { domain: cookieConfig.domain, path: "/" } : {};
       for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
         if (cookieName) {
-          res.clearCookie(cookieName);
+          res.clearCookie(cookieName, clearOpts);
         }
+      }
+      if (!res.headersSent) {
+        res.status(200).json({ success: true, message: "Logged out" });
       }
     }
   });

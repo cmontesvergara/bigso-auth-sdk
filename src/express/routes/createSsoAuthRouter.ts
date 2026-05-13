@@ -206,22 +206,25 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             if (options.onLogout) {
                 await options.onLogout(accessToken);
             }
-
-            // Usar cookieConfig personalizada o fallback a variables de entorno
-            const cookieConfig = options.cookieConfig;
-
-            for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
-                if (cookieName) {
-                    res.clearCookie(cookieName);
-                }
-            }
         } catch (error: any) {
             console.warn('[BigsoAuthSDK] Failed to logout in SSO Backend.', error.message);
+            // Continue — always clear cookies and respond regardless of sso-core error
+        } finally {
+            // Always clear cookies no matter what happened above
             const cookieConfig = options.cookieConfig;
+            const clearOpts = cookieConfig
+                ? { domain: cookieConfig.domain, path: '/' }
+                : {};
+
             for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
                 if (cookieName) {
-                    res.clearCookie(cookieName);
+                    res.clearCookie(cookieName, clearOpts);
                 }
+            }
+
+            // Always respond so the client doesn't time out
+            if (!res.headersSent) {
+                res.status(200).json({ success: true, message: 'Logged out' });
             }
         }
     });

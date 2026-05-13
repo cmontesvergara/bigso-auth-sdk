@@ -118,13 +118,26 @@ export class BigsoSsoClient {
     }
 
     async logout(accessToken: string, revokeAll: boolean = false): Promise<void> {
+        // sso-core requireds sessionId (= jti of the access token) in the body
+        let sessionId: string | undefined;
+        try {
+            const parts = accessToken.split('.');
+            if (parts.length === 3) {
+                const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
+                sessionId = payload.jti;
+            }
+        } catch {
+            // If parsing fails, proceed without sessionId — sso-core will reject but
+            // the SDK's handler in createSsoAuthRouter already clears cookies anyway.
+        }
+
         await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/logout`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ revokeAll }),
+            body: JSON.stringify({ revokeAll, sessionId }),
             credentials: 'include',
         }, 'logout');
     }
