@@ -267,7 +267,8 @@ var BigsoAuth = class extends EventEmitter {
     }
     this.iframe = document.createElement("iframe");
     this.iframe.className = "sso-frame";
-    this.iframe.src = `${this.options.ssoOrigin}/auth/sign-in?v=2.3&client_id=${this.options.clientId}&tenant_id=${this.options.tenantId}`;
+    let iframeUrl = `${this.options.ssoOrigin}/auth/i-sign-in?v=2.3&client_id=${this.options.clientId}&tenant_id=${this.options.tenantId}`;
+    this.iframe.src = iframeUrl;
     this.iframe.setAttribute("title", "SSO Login");
     this.overlayEl.appendChild(this.iframe);
     this.debug("Iframe creado", this.iframe.src);
@@ -299,8 +300,10 @@ var BigsoAuth = class extends EventEmitter {
                 animation: fadeIn 0.2s ease;
             }
             .sso-frame {
-                width: 370px;
-                height: 350px;
+                width: 100%;
+                height: 100%;
+                max-width: 400px;
+                max-height: 600px;
                 border: none;
                 border-radius: 16px;
                 background: var(--card-bg, #fff);
@@ -311,9 +314,11 @@ var BigsoAuth = class extends EventEmitter {
                 .sso-frame {
                     width: 100%;
                     height: 100%;
+                    max-width: 100dvw;
+                    max-height: 100dvh;
                     border-radius: 0;
                 }
-            }
+                           }
             .sso-close-btn {
                 position: absolute;
                 top: 12px;
