@@ -141,9 +141,23 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 res.status(401).json({ error: 'No refresh token available' });
                 return;
             }
-            const tenantId = req.headers['x-tenant-id']?.toString() || '';
+            let tenantId = req.headers['x-tenant-id']?.toString() || undefined;
+
+            // Fallback: extraer tenantId del refresh token JWT si el header está vacío
+            if (!tenantId) {
+                try {
+                    const payload = JSON.parse(Buffer.from(refreshToken.split('.')[1], 'base64').toString());
+                    tenantId = payload['https://bigso.org/tenant_id'] || payload['https://bigso.co/tenant_id'] || payload.tenantId || '';
+                    if (tenantId) {
+                        console.log('[BigsoAuthSDK] Recovered tenantId from refresh token JWT:', tenantId);
+                    }
+                } catch (e) {
+                    console.warn('[BigsoAuthSDK] Could not parse tenantId from refresh token:', e);
+                }
+            }
+
             console.log('TENANT ANTES DE ENVIAR:', tenantId);
-            const ssoResponse = await options.ssoClient.refreshTokens(refreshToken, tenantId);
+            const ssoResponse = await options.ssoClient.refreshTokens(refreshToken, tenantId as string);
             const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
 
             if (ssoResponse.tokens?.refreshToken) {
