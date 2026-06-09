@@ -180,11 +180,11 @@ function createSsoAuthRouter(options) {
         res.status(401).json({ error: "No refresh token available" });
         return;
       }
-      let tenantId = req.headers["x-tenant-id"]?.toString() || "";
+      let tenantId = req.headers["x-tenant-id"]?.toString() || void 0;
       if (!tenantId) {
         try {
           const payload = JSON.parse(Buffer.from(refreshToken.split(".")[1], "base64").toString());
-          tenantId = payload["https://bigso.co/tenant_id"] || payload.tenantId || "";
+          tenantId = payload["https://bigso.org/tenant_id"] || payload["https://bigso.co/tenant_id"] || payload.tenantId || "";
           if (tenantId) {
             console.log("[BigsoAuthSDK] Recovered tenantId from refresh token JWT:", tenantId);
           }
