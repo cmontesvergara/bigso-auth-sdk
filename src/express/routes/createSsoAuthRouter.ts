@@ -182,12 +182,19 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             let refreshPromise = activeRefreshes.get(refreshKey);
 
             if (!refreshPromise) {
-                refreshPromise = options.ssoClient.refreshTokens(refreshToken, tenantId as string);
+                refreshPromise = options.ssoClient.refreshTokens(refreshToken, tenantId as string)
+                    .catch((err: any) => {
+                        // Remove from active map on error so subsequent retries can proceed
+                        activeRefreshes.delete(refreshKey);
+                        throw err;
+                    });
                 activeRefreshes.set(refreshKey, refreshPromise);
 
-                // Clean up when done (success or failure)
-                refreshPromise.finally(() => {
+                // Clean up on success only (errors are handled above)
+                refreshPromise.then(() => {
                     activeRefreshes.delete(refreshKey);
+                }).catch(() => {
+                    // Already handled above; this catch prevents unhandled rejection
                 });
             } else {
                 logger.info('Refresh already in flight, waiting for result', { refreshKey });
@@ -241,11 +248,20 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         } catch (error: any) {
             logger.error('Error refreshing tokens', { message: error.message });
 
-            if (error.message?.includes('revoked') || error.message?.includes('expired') || error.message?.includes('Invalid')) {
+            // Clear cookie on any authentication error to prevent crash loops
+            const isAuthError = error.message?.includes('revoked') ||
+                error.message?.includes('expired') ||
+                error.message?.includes('Invalid') ||
+                error.message?.includes('not recognized') ||
+                error.message?.includes('Token not found') ||
+                error.message?.includes('reuse detected');
+
+            if (isAuthError) {
                 res.clearCookie(cookieConfig?.refreshName as string, {
                     path: cookiePath,
                     domain: cookieDomain
                 });
+                logger.info('Cleared invalid refresh token cookie', { refreshName, reason: error.message });
             }
             res.status(401).json({ error: error.message || 'Failed to refresh tokens' });
         }
