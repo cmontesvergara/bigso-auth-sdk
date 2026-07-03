@@ -4,12 +4,20 @@ interface SsoClientOptions {
     ssoBackendUrl: string;
     ssoJwksUrl?: string;
     appId: string;
+    /**
+     * API version path used for auth endpoints.
+     * - 'v2' (default): `${ssoBackendUrl}/api/v2/auth/...`
+     * - 'v1': `${ssoBackendUrl}/v1/auth/...` (legacy gateway path alias)
+     */
+    apiVersion?: 'v1' | 'v2';
 }
 declare class BigsoSsoClient {
     private ssoBackendUrl;
     private appId;
     private ssoJwksUrl?;
+    private apiVersion;
     constructor(options: SsoClientOptions);
+    private authUrl;
     private performFetch;
     verifySignedPayload(token: string, expectedAudience: string): Promise<any>;
     validateAccessToken(accessToken: string): Promise<SsoTokenPayload | null>;

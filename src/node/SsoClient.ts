@@ -5,17 +5,30 @@ export interface SsoClientOptions {
     ssoBackendUrl: string;
     ssoJwksUrl?: string;
     appId: string;
+    /**
+     * API version path used for auth endpoints.
+     * - 'v2' (default): `${ssoBackendUrl}/api/v2/auth/...`
+     * - 'v1': `${ssoBackendUrl}/v1/auth/...` (legacy gateway path alias)
+     */
+    apiVersion?: 'v1' | 'v2';
 }
 
 export class BigsoSsoClient {
     private ssoBackendUrl: string;
     private appId: string;
     private ssoJwksUrl?: string;
+    private apiVersion: 'v1' | 'v2';
 
     constructor(options: SsoClientOptions) {
         this.ssoBackendUrl = options.ssoBackendUrl;
         this.appId = options.appId;
         this.ssoJwksUrl = options.ssoJwksUrl;
+        this.apiVersion = options.apiVersion ?? 'v2';
+    }
+
+    private authUrl(action: string): string {
+        const basePath = this.apiVersion === 'v1' ? '/v1/auth' : '/api/v2/auth';
+        return `${this.ssoBackendUrl}${basePath}/${action}`;
     }
 
     private async performFetch(url: string, options: RequestInit, operation: string): Promise<any> {
@@ -81,7 +94,7 @@ export class BigsoSsoClient {
             ? { email: emailOrNuid, password }
             : { nuid: emailOrNuid, password };
 
-        return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/login`, {
+        return await this.performFetch(this.authUrl('login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -90,7 +103,7 @@ export class BigsoSsoClient {
     }
 
     async exchangeCode(code: string, codeVerifier: string): Promise<V2ExchangeResponse> {
-        return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/exchange`, {
+        return await this.performFetch(this.authUrl('exchange'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -109,7 +122,7 @@ export class BigsoSsoClient {
         const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
         console.log('🔄 Refreshing tokens with payload:', { refreshToken, appId: this.appId, tenantId: tenantId });
         
-        return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
+        return await this.performFetch(this.authUrl('refresh'), {
             method: 'POST',
             headers,
             body,
@@ -131,7 +144,7 @@ export class BigsoSsoClient {
             // the SDK's handler in createSsoAuthRouter already clears cookies anyway.
         }
 
-        await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/logout`, {
+        await this.performFetch(this.authUrl('logout'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -142,7 +155,7 @@ export class BigsoSsoClient {
         }, 'logout');
     }
     async session(sessionId: string, appId: string): Promise<any> {
-        return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
+        return await this.performFetch(this.authUrl('session'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -157,6 +170,7 @@ export class BigsoSsoClient {
             ssoBackendUrl: this.ssoBackendUrl,
             ssoJwksUrl: this.ssoJwksUrl,
             appId: this.appId,
+            apiVersion: this.apiVersion,
         }
     }
 }

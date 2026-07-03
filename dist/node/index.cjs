@@ -60,6 +60,11 @@ var BigsoSsoClient = class {
     this.ssoBackendUrl = options.ssoBackendUrl;
     this.appId = options.appId;
     this.ssoJwksUrl = options.ssoJwksUrl;
+    this.apiVersion = options.apiVersion ?? "v2";
+  }
+  authUrl(action) {
+    const basePath = this.apiVersion === "v1" ? "/v1/auth" : "/api/v2/auth";
+    return `${this.ssoBackendUrl}${basePath}/${action}`;
   }
   async performFetch(url, options, operation) {
     console.log(`[BigsoSsoClient] \u{1F680} START ${operation} | URL: ${url}`);
@@ -115,7 +120,7 @@ var BigsoSsoClient = class {
   async login(emailOrNuid, password) {
     const isEmail = emailOrNuid.includes("@");
     const payload = isEmail ? { email: emailOrNuid, password } : { nuid: emailOrNuid, password };
-    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/login`, {
+    return await this.performFetch(this.authUrl("login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -123,7 +128,7 @@ var BigsoSsoClient = class {
     }, "login");
   }
   async exchangeCode(code, codeVerifier) {
-    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/exchange`, {
+    return await this.performFetch(this.authUrl("exchange"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -139,7 +144,7 @@ var BigsoSsoClient = class {
     const headers = { "Content-Type": "application/json" };
     const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
     console.log("\u{1F504} Refreshing tokens with payload:", { refreshToken, appId: this.appId, tenantId });
-    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/refresh`, {
+    return await this.performFetch(this.authUrl("refresh"), {
       method: "POST",
       headers,
       body,
@@ -156,7 +161,7 @@ var BigsoSsoClient = class {
       }
     } catch {
     }
-    await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/logout`, {
+    await this.performFetch(this.authUrl("logout"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -167,7 +172,7 @@ var BigsoSsoClient = class {
     }, "logout");
   }
   async session(sessionId, appId) {
-    return await this.performFetch(`${this.ssoBackendUrl}/api/v2/auth/session`, {
+    return await this.performFetch(this.authUrl("session"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -180,7 +185,8 @@ var BigsoSsoClient = class {
     return {
       ssoBackendUrl: this.ssoBackendUrl,
       ssoJwksUrl: this.ssoJwksUrl,
-      appId: this.appId
+      appId: this.appId,
+      apiVersion: this.apiVersion
     };
   }
 };
