@@ -4,6 +4,17 @@ import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
+    /**
+     * Cookie de sesión para fallback cuando no hay Authorization header.
+     * Permite que window.open() y navegaciones directas funcionen sin
+     * que el frontend inyecte manualmente el Bearer token.
+     *
+     * Si se proporciona, el middleware lee la cookie `sessionName`,
+     * resuelve la sesión via SSO y extrae el accessToken.
+     */
+    cookieConfig?: {
+        sessionName: string;
+    };
 }
 declare global {
     namespace Express {

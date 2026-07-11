@@ -27,18 +27,53 @@ __export(express_exports, {
 });
 module.exports = __toCommonJS(express_exports);
 
+// src/utils/logger.ts
+var SdkLogger = class {
+  constructor(context) {
+    this.context = context;
+  }
+  format(level, message, meta) {
+    const ts = (/* @__PURE__ */ new Date()).toISOString();
+    const metaStr = meta ? " | " + JSON.stringify(meta) : "";
+    return `[${ts}] [${level}] [${this.context}] ${message}${metaStr}`;
+  }
+  info(message, meta) {
+    console.log(this.format("INFO", message, meta));
+  }
+  warn(message, meta) {
+    console.warn(this.format("WARN", message, meta));
+  }
+  error(message, meta) {
+    console.error(this.format("ERROR", message, meta));
+  }
+};
+
 // src/express/middlewares/ssoAuth.ts
+var logger = new SdkLogger("AuthSDK");
 function ssoAuthMiddleware(options) {
   return async (req, res, next) => {
     try {
+      let accessToken;
       const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      if (authHeader?.startsWith("Bearer ")) {
+        accessToken = authHeader.substring(7);
+      }
+      if (!accessToken && options.cookieConfig?.sessionName && req.cookies) {
+        const sessionId = req.cookies[options.cookieConfig.sessionName];
+        if (sessionId) {
+          logger.info("No Bearer header, falling back to session cookie", {
+            sessionName: options.cookieConfig.sessionName
+          });
+          const ssoClientOptions = options.ssoClient.getClientOptions();
+          const session = await options.ssoClient.session(sessionId, ssoClientOptions.appId);
+          accessToken = session?.tokens?.accessToken;
+        }
+      }
+      if (!accessToken) {
         res.status(401).json({ error: "Missing access token" });
         return;
       }
-      const accessToken = authHeader.substring(7);
       const payload = await options.ssoClient.validateAccessToken(accessToken);
-      console.log("[BigsoAuthSDK] Access Token Payload:", payload);
       if (!payload) {
         res.status(401).json({ error: "Invalid or expired access token" });
         return;
@@ -46,7 +81,7 @@ function ssoAuthMiddleware(options) {
       req.tokenPayload = payload;
       next();
     } catch (error) {
-      console.error("[BigsoAuthSDK] Authentication Middleware Error:", error instanceof Error ? error.message : error);
+      logger.error("Authentication Middleware Error", { message: error instanceof Error ? error.message : String(error) });
       res.status(401).json({ error: "Authentication failed" });
     }
   };
@@ -89,30 +124,7 @@ function ssoSyncGuardMiddleware(options) {
 
 // src/express/routes/createSsoAuthRouter.ts
 var import_express = require("express");
-
-// src/utils/logger.ts
-var SdkLogger = class {
-  constructor(context) {
-    this.context = context;
-  }
-  format(level, message, meta) {
-    const ts = (/* @__PURE__ */ new Date()).toISOString();
-    const metaStr = meta ? " | " + JSON.stringify(meta) : "";
-    return `[${ts}] [${level}] [${this.context}] ${message}${metaStr}`;
-  }
-  info(message, meta) {
-    console.log(this.format("INFO", message, meta));
-  }
-  warn(message, meta) {
-    console.warn(this.format("WARN", message, meta));
-  }
-  error(message, meta) {
-    console.error(this.format("ERROR", message, meta));
-  }
-};
-
-// src/express/routes/createSsoAuthRouter.ts
-var logger = new SdkLogger("AuthSDK");
+var logger2 = new SdkLogger("AuthSDK");
 var activeRefreshes = /* @__PURE__ */ new Map();
 function getRefreshKey(token) {
   return token.substring(0, 20);
@@ -123,7 +135,7 @@ function serializePermissions(permissions) {
 function createSsoAuthRouter(options) {
   const router = (0, import_express.Router)();
   router.post("/exchange", async (req, res) => {
-    logger.info("Received /exchange-v2 request", { body: req.body });
+    logger2.info("Received /exchange-v2 request", { body: req.body });
     try {
       const { payload, codeVerifier: codeVerifierFromBody } = req.body;
       if (!payload) {
@@ -142,7 +154,7 @@ function createSsoAuthRouter(options) {
       }
       const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
       if (options.cookieConfig) {
-        logger.info("Setting refresh token cookie with custom config", { config: options.cookieConfig });
+        logger2.info("Setting refresh token cookie with custom config", { config: options.cookieConfig });
         const cookieConfig = options.cookieConfig;
         res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
           httpOnly: true,
@@ -175,7 +187,7 @@ function createSsoAuthRouter(options) {
       delete ssoResponse.tokens.refreshToken;
       res.json(ssoResponse);
     } catch (error) {
-      logger.error("Error exchanging v2 payload", { message: error.message });
+      logger2.error("Error exchanging v2 payload", { message: error.message });
       res.status(401).json({ error: error.message || "Failed to verify signed payload" });
     }
   });
@@ -184,7 +196,7 @@ function createSsoAuthRouter(options) {
     res.set("Pragma", "no-cache");
     res.set("Expires", "0");
     if (options.cookieConfig) {
-      logger.info("Session request", { config: options.cookieConfig });
+      logger2.info("Session request", { config: options.cookieConfig });
       const cookieConfig = options.cookieConfig;
       const sessionId = req.cookies[cookieConfig.sessionName];
       const ssoclientOptions = options.ssoClient.getClientOptions();
@@ -199,7 +211,7 @@ function createSsoAuthRouter(options) {
     const cookieConfig = options.cookieConfig;
     const refreshName = cookieConfig?.refreshName;
     const incomingToken = req.cookies?.[refreshName];
-    logger.info("Received /refresh request", {
+    logger2.info("Received /refresh request", {
       refreshName,
       hasCookie: !!incomingToken,
       tokenPrefix: incomingToken ? incomingToken.substring(0, 20) : null,
@@ -211,7 +223,7 @@ function createSsoAuthRouter(options) {
     try {
       const refreshToken = req.cookies?.[cookieConfig?.refreshName];
       if (!refreshToken) {
-        logger.warn("No refresh token in cookies", { refreshName });
+        logger2.warn("No refresh token in cookies", { refreshName });
         res.status(401).json({ error: "No refresh token available" });
         return;
       }
@@ -221,13 +233,13 @@ function createSsoAuthRouter(options) {
           const payload = JSON.parse(Buffer.from(refreshToken.split(".")[1], "base64").toString());
           tenantId = payload["https://bigso.org/tenant_id"] || payload["https://bigso.co/tenant_id"] || payload.tenantId || "";
           if (tenantId) {
-            logger.info("Recovered tenantId from refresh token JWT", { tenantId });
+            logger2.info("Recovered tenantId from refresh token JWT", { tenantId });
           }
         } catch (e) {
-          logger.warn("Could not parse tenantId from refresh token", { error: e.message });
+          logger2.warn("Could not parse tenantId from refresh token", { error: e.message });
         }
       }
-      logger.info("Forwarding refresh to IDP", { tenantId: tenantId || "(empty)" });
+      logger2.info("Forwarding refresh to IDP", { tenantId: tenantId || "(empty)" });
       const refreshKey = getRefreshKey(refreshToken);
       let refreshPromise = activeRefreshes.get(refreshKey);
       if (!refreshPromise) {
@@ -241,7 +253,7 @@ function createSsoAuthRouter(options) {
         }).catch(() => {
         });
       } else {
-        logger.info("Refresh already in flight, waiting for result", { refreshKey });
+        logger2.info("Refresh already in flight, waiting for result", { refreshKey });
       }
       const ssoResponse = await refreshPromise;
       const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1e3;
@@ -255,13 +267,13 @@ function createSsoAuthRouter(options) {
           maxAge,
           domain: cookieDomain
         });
-        logger.info("Cookie updated after refresh", {
+        logger2.info("Cookie updated after refresh", {
           refreshName,
           oldTokenPrefix: refreshToken.substring(0, 20),
           newTokenPrefix: newToken.substring(0, 20)
         });
       } else {
-        logger.warn("No refresh token received in refresh response, not setting cookie");
+        logger2.warn("No refresh token received in refresh response, not setting cookie");
       }
       const currentTenant = ssoResponse.currentTenant;
       if (cookieConfig && currentTenant && currentTenant.permissions?.length > 0) {
@@ -273,23 +285,23 @@ function createSsoAuthRouter(options) {
           maxAge,
           domain: cookieDomain
         });
-        logger.info("Refreshed permissions cookie", { tenantId: currentTenant.id, count: currentTenant.permissions.length });
+        logger2.info("Refreshed permissions cookie", { tenantId: currentTenant.id, count: currentTenant.permissions.length });
       } else if (cookieConfig) {
-        logger.warn("No permissions received in refresh response \u2014 permissions cookie NOT updated");
+        logger2.warn("No permissions received in refresh response \u2014 permissions cookie NOT updated");
       }
       res.json({
         success: true,
         tokens: ssoResponse.tokens
       });
     } catch (error) {
-      logger.error("Error refreshing tokens", { message: error.message });
+      logger2.error("Error refreshing tokens", { message: error.message });
       const isAuthError = error.message?.includes("revoked") || error.message?.includes("expired") || error.message?.includes("Invalid") || error.message?.includes("not recognized") || error.message?.includes("Token not found") || error.message?.includes("reuse detected");
       if (isAuthError) {
         res.clearCookie(cookieConfig?.refreshName, {
           path: cookiePath,
           domain: cookieDomain
         });
-        logger.info("Cleared invalid refresh token cookie", { refreshName, reason: error.message });
+        logger2.info("Cleared invalid refresh token cookie", { refreshName, reason: error.message });
       }
       res.status(401).json({ error: error.message || "Failed to refresh tokens" });
     }
@@ -300,13 +312,13 @@ function createSsoAuthRouter(options) {
       if (accessToken) {
         await options.ssoClient.logout(accessToken, req.body?.revokeAll ?? false);
       } else {
-        logger.warn("Logout called without access token \u2014 skipping SSO-core revocation, clearing cookies anyway.");
+        logger2.warn("Logout called without access token \u2014 skipping SSO-core revocation, clearing cookies anyway.");
       }
       if (options.onLogout) {
         await options.onLogout(accessToken);
       }
     } catch (error) {
-      logger.warn("Failed to logout in SSO Backend", { message: error.message });
+      logger2.warn("Failed to logout in SSO Backend", { message: error.message });
     } finally {
       const cookieConfig = options.cookieConfig;
       const clearOpts = cookieConfig ? { domain: cookieConfig.domain, path: "/" } : {};
