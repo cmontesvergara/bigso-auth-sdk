@@ -71,6 +71,15 @@ async function verifySignedPayload(token, jwksUrl, expectedAudience) {
   return payload;
 }
 
+// src/browser/urls.ts
+function buildSsoFrameUrl(ssoOrigin, clientId, tenantId) {
+  const url = new URL("/auth/i-sign-in", ssoOrigin);
+  url.searchParams.set("v", "2.3");
+  url.searchParams.set("client_id", clientId);
+  if (tenantId) url.searchParams.set("tenant_id", tenantId);
+  return url.toString();
+}
+
 // src/browser/auth.ts
 var BigsoAuth = class extends EventEmitter {
   constructor(options) {
@@ -267,8 +276,11 @@ var BigsoAuth = class extends EventEmitter {
     }
     this.iframe = document.createElement("iframe");
     this.iframe.className = "sso-frame";
-    let iframeUrl = `${this.options.ssoOrigin}/auth/i-sign-in?v=2.3&client_id=${this.options.clientId}&tenant_id=${this.options.tenantId}`;
-    this.iframe.src = iframeUrl;
+    this.iframe.src = buildSsoFrameUrl(
+      this.options.ssoOrigin,
+      this.options.clientId,
+      this.options.tenantId
+    );
     this.iframe.setAttribute("title", "SSO Login");
     this.overlayEl.appendChild(this.iframe);
     this.debug("Iframe creado", this.iframe.src);
@@ -363,6 +375,9 @@ var BigsoAuth = class extends EventEmitter {
     url.searchParams.set("code_challenge", codeChallenge);
     url.searchParams.set("code_challenge_method", "S256");
     url.searchParams.set("client_id", this.options.clientId);
+    if (this.options.tenantId) {
+      url.searchParams.set("tenant_id", this.options.tenantId);
+    }
     return url.toString();
   }
   debug(...args) {

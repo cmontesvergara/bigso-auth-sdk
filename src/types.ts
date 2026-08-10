@@ -5,7 +5,8 @@ export interface BigsoAuthOptions {
     timeout?: number
     debug?: boolean
     redirectUri?: string
-    tenantId: string
+    /** Optional tenant hint. Omit it to let the SSO session select an eligible tenant. */
+    tenantId?: string
     theme?: 'light' | 'dark'
     /** Expected audience for signed payload verification.
      *  Defaults to window.location.origin if not provided.

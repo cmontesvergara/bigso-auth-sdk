@@ -2,9 +2,11 @@ import type { BigsoAuthOptions, BigsoAuthResult, SsoErrorPayload, SsoInitPayload
 import { generateRandomId, generateVerifier, sha256Base64Url } from '../utils/crypto'
 import { EventEmitter } from '../utils/events'
 import { verifySignedPayload } from '../utils/jws'
+import { buildSsoFrameUrl } from './urls'
 
 export class BigsoAuth extends EventEmitter {
-    private options: Required<Omit<BigsoAuthOptions, 'audience'>> & Pick<BigsoAuthOptions, 'audience'>
+    private options: Required<Omit<BigsoAuthOptions, 'audience' | 'tenantId'>>
+        & Pick<BigsoAuthOptions, 'audience' | 'tenantId'>
     private iframe?: HTMLIFrameElement
     private authCompleted = false
     private requestId = generateRandomId()
@@ -246,8 +248,11 @@ export class BigsoAuth extends EventEmitter {
 
         this.iframe = document.createElement('iframe')
         this.iframe.className = 'sso-frame'
-        let iframeUrl = `${this.options.ssoOrigin}/auth/i-sign-in?v=2.3&client_id=${this.options.clientId}&tenant_id=${this.options.tenantId}`
-        this.iframe.src = iframeUrl
+        this.iframe.src = buildSsoFrameUrl(
+            this.options.ssoOrigin,
+            this.options.clientId,
+            this.options.tenantId
+        )
         this.iframe.setAttribute('title', 'SSO Login')
         this.overlayEl!.appendChild(this.iframe)
         this.debug('Iframe creado', this.iframe.src)
@@ -349,6 +354,9 @@ export class BigsoAuth extends EventEmitter {
         url.searchParams.set('code_challenge', codeChallenge)
         url.searchParams.set('code_challenge_method', 'S256')
         url.searchParams.set('client_id', this.options.clientId)
+        if (this.options.tenantId) {
+            url.searchParams.set('tenant_id', this.options.tenantId)
+        }
         return url.toString()
     }
 
