@@ -135,3 +135,35 @@ export interface BigsoAuthResult {
     exp?: number
     iat?: number
 }
+
+export const CONTEXTUAL_LAUNCH_PROTOCOL = 'bigso-context-launch-v1' as const
+
+export type ContextualLaunchErrorCode =
+    | 'session_required'
+    | 'tenant_not_eligible'
+    | 'application_not_enabled'
+    | 'application_access_denied'
+    | 'invalid_launch_context'
+    | 'authorization_expired'
+    | 'exchange_failed'
+
+export interface ContextualLaunchApplication {
+    appId: string
+    name: string
+    url: string
+    launchUrl?: string | null
+    launchProtocol?: typeof CONTEXTUAL_LAUNCH_PROTOCOL | null
+}
+
+export interface ContextualLaunchContext {
+    tenantHint?: string
+    returnPath: string
+    correlationId: string
+}
+
+export interface ContextualLaunchAdapterOptions extends BigsoAuthOptions {
+    defaultReturnPath?: string
+    isSessionReusable?: (tenantId: string) => Promise<boolean>
+    onAuthenticated: (result: BigsoAuthResult, returnPath: string) => Promise<void> | void
+    navigate: (path: string) => void
+}

@@ -1,4 +1,5 @@
-import { B as BigsoAuthOptions, a as BigsoAuthResult } from '../types-BrLgLlDA.cjs';
+import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext } from '../types-5tVIcWnZ.cjs';
+export { d as CONTEXTUAL_LAUNCH_PROTOCOL, e as ContextualLaunchErrorCode } from '../types-5tVIcWnZ.cjs';
 
 declare class EventEmitter {
     private events;
@@ -29,4 +30,13 @@ declare class BigsoAuth extends EventEmitter {
     private debug;
 }
 
-export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult };
+declare function normalizeReturnPath(value: string | null | undefined, fallback?: string): string;
+declare function parseContextualLaunch(search: string, fallback?: string): ContextualLaunchContext;
+declare function buildContextualLaunchUrl(application: ContextualLaunchApplication, tenantId: string, returnPath?: string, correlationId?: string): string;
+declare class ContextualLaunchAdapter {
+    private readonly options;
+    constructor(options: ContextualLaunchAdapterOptions);
+    launch(search?: string): Promise<'reused' | 'authenticated'>;
+}
+
+export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch };

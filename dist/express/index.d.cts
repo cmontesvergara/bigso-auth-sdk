@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.cjs';
-import { S as SsoJwtTenant, b as SsoTokenPayload, V as V2ExchangeResponse } from '../types-BrLgLlDA.cjs';
+import { S as SsoJwtTenant, f as SsoTokenPayload, V as V2ExchangeResponse } from '../types-5tVIcWnZ.cjs';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -72,4 +72,10 @@ interface SsoSyncRouterOptions {
 }
 declare function createSsoSyncRouter(options: SsoSyncRouterOptions): Router;
 
-export { type CookieConfig, type CreateSsoAuthRouterOptions, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createSsoAuthRouter, createSsoSyncRouter, ssoAuthMiddleware, ssoSyncGuardMiddleware };
+interface ContextualLaunchRouterOptions {
+    ssoClient: BigsoSsoClient;
+    cookieConfig: Pick<CookieConfig, 'sessionName'>;
+}
+declare function createContextualLaunchRouter(options: ContextualLaunchRouterOptions): Router;
+
+export { type ContextualLaunchRouterOptions, type CookieConfig, type CreateSsoAuthRouterOptions, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createContextualLaunchRouter, createSsoAuthRouter, createSsoSyncRouter, ssoAuthMiddleware, ssoSyncGuardMiddleware };

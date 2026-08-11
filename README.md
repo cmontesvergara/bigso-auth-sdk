@@ -270,3 +270,22 @@ npm test        # vitest
 ## Licencia
 
 MIT © Bigso
+# Contextual App Launch v1
+
+El SDK exporta `buildContextualLaunchUrl` para cualquier launcher y
+`ContextualLaunchAdapter` para la ruta `/launch` de una aplicación destino. El
+adaptador reutiliza una sesión propia cuando coincide el tenant o inicia el SSO
+existente con PKCE y `tenantId` como hint. `normalizeReturnPath` bloquea open
+redirects.
+
+En el middleware destino se monta `createContextualLaunchRouter` junto a
+`createSsoAuthRouter`; `/session` permite al adaptador comprobar una sesión
+tenant-scoped sin exponer tokens.
+
+```ts
+app.use('/api/launch', createContextualLaunchRouter({ ssoClient, cookieConfig }))
+app.use('/api/auth', createSsoAuthRouter({ ssoClient, frontendUrl, cookieConfig }))
+```
+
+El origen sólo consume `launchUrl` y `launchProtocol` procedentes de IAM. Nunca
+construye hosts ni añade credenciales al enlace.

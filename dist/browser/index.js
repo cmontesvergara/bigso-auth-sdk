@@ -354,6 +354,63 @@ var BigsoAuth = class extends EventEmitter {
     }
   }
 };
+
+// src/types.ts
+var CONTEXTUAL_LAUNCH_PROTOCOL = "bigso-context-launch-v1";
+
+// src/browser/contextualLaunch.ts
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function normalizeReturnPath(value, fallback = "/") {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return fallback;
+  try {
+    const parsed = new URL(value, "https://launch.invalid");
+    if (parsed.origin !== "https://launch.invalid") return fallback;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+function parseContextualLaunch(search, fallback = "/") {
+  const params = new URLSearchParams(search);
+  const tenantHint = params.get("tenant_hint") || void 0;
+  return {
+    tenantHint: tenantHint && UUID.test(tenantHint) ? tenantHint : void 0,
+    returnPath: normalizeReturnPath(params.get("return_path"), fallback),
+    correlationId: params.get("correlation_id") || generateRandomId()
+  };
+}
+function buildContextualLaunchUrl(application, tenantId, returnPath, correlationId = generateRandomId()) {
+  const base = application.launchProtocol === CONTEXTUAL_LAUNCH_PROTOCOL && application.launchUrl ? application.launchUrl : application.url;
+  const url = new URL(base);
+  if (application.launchProtocol === CONTEXTUAL_LAUNCH_PROTOCOL && application.launchUrl) {
+    if (!UUID.test(tenantId)) throw new Error("tenantId must be a UUID");
+    url.searchParams.set("tenant_hint", tenantId);
+    url.searchParams.set("correlation_id", correlationId);
+    if (returnPath) url.searchParams.set("return_path", normalizeReturnPath(returnPath));
+  }
+  return url.toString();
+}
+var ContextualLaunchAdapter = class {
+  constructor(options) {
+    this.options = options;
+  }
+  async launch(search = window.location.search) {
+    const context = parseContextualLaunch(search, this.options.defaultReturnPath);
+    if (context.tenantHint && this.options.isSessionReusable && await this.options.isSessionReusable(context.tenantHint)) {
+      this.options.navigate(context.returnPath);
+      return "reused";
+    }
+    const auth = new BigsoAuth({ ...this.options, tenantId: context.tenantHint });
+    const result = await auth.login();
+    await this.options.onAuthenticated(result, context.returnPath);
+    return "authenticated";
+  }
+};
 export {
-  BigsoAuth
+  BigsoAuth,
+  CONTEXTUAL_LAUNCH_PROTOCOL,
+  ContextualLaunchAdapter,
+  buildContextualLaunchUrl,
+  normalizeReturnPath,
+  parseContextualLaunch
 };

@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/express/index.ts
 var express_exports = {};
 __export(express_exports, {
+  createContextualLaunchRouter: () => createContextualLaunchRouter,
   createSsoAuthRouter: () => createSsoAuthRouter,
   createSsoSyncRouter: () => createSsoSyncRouter,
   ssoAuthMiddleware: () => ssoAuthMiddleware,
@@ -360,8 +361,37 @@ function createSsoSyncRouter(options) {
   });
   return router;
 }
+
+// src/express/routes/createContextualLaunchRouter.ts
+var import_express3 = require("express");
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function createContextualLaunchRouter(options) {
+  const router = (0, import_express3.Router)();
+  router.get("/session", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const tenantHint = typeof req.query.tenant_hint === "string" ? req.query.tenant_hint : "";
+    if (!UUID.test(tenantHint)) {
+      res.status(400).json({ reusable: false, error: "invalid_launch_context" });
+      return;
+    }
+    const sessionId = req.cookies?.[options.cookieConfig.sessionName];
+    if (!sessionId) {
+      res.status(200).json({ reusable: false, error: "session_required" });
+      return;
+    }
+    try {
+      const client = options.ssoClient.getClientOptions();
+      const session = await options.ssoClient.session(sessionId, client.appId);
+      res.status(200).json({ reusable: session.currentTenant?.id === tenantHint });
+    } catch {
+      res.status(200).json({ reusable: false, error: "session_required" });
+    }
+  });
+  return router;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  createContextualLaunchRouter,
   createSsoAuthRouter,
   createSsoSyncRouter,
   ssoAuthMiddleware,

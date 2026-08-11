@@ -9,3 +9,6 @@ export type { CreateSsoAuthRouterOptions, CookieConfig } from './routes/createSs
 
 export { createSsoSyncRouter } from './routes/createSsoSyncRouter';
 export type { SsoSyncRouterOptions } from './routes/createSsoSyncRouter';
+
+export { createContextualLaunchRouter } from './routes/createContextualLaunchRouter';
+export type { ContextualLaunchRouterOptions } from './routes/createContextualLaunchRouter';

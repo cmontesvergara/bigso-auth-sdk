@@ -1,2 +1,4 @@
 export { BigsoAuth } from './auth'
-export type { BigsoAuthOptions, BigsoAuthResult } from '../types'
+export { ContextualLaunchAdapter, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch } from './contextualLaunch'
+export { CONTEXTUAL_LAUNCH_PROTOCOL } from '../types'
+export type { BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, ContextualLaunchErrorCode } from '../types'
