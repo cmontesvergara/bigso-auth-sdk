@@ -166,4 +166,6 @@ export interface ContextualLaunchAdapterOptions extends BigsoAuthOptions {
     isSessionReusable?: (tenantId: string) => Promise<boolean>
     onAuthenticated: (result: BigsoAuthResult, returnPath: string) => Promise<void> | void
     navigate: (path: string) => void
+    /** Identity-portal route used for top-level contextual authorization. */
+    authorizationPath?: string
 }

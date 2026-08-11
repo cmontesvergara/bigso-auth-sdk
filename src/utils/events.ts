@@ -1,14 +1,14 @@
 // Emisor de eventos simple
 
 export class EventEmitter {
-    private events: Record<string, Function[]> = {}
+    private events: Record<string, Array<(data?: any) => void>> = {}
 
-    on(event: string, handler: Function) {
+    on(event: string, handler: (data?: any) => void) {
         if (!this.events[event]) this.events[event] = []
         this.events[event].push(handler)
     }
 
-    off(event: string, handler: Function) {
+    off(event: string, handler: (data?: any) => void) {
         if (!this.events[event]) return
         this.events[event] = this.events[event].filter(h => h !== handler)
     }

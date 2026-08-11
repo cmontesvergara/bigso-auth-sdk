@@ -1,10 +1,10 @@
-import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext } from '../types-5tVIcWnZ.js';
-export { d as CONTEXTUAL_LAUNCH_PROTOCOL, e as ContextualLaunchErrorCode } from '../types-5tVIcWnZ.js';
+import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext } from '../types-BCrV2a1f.js';
+export { d as CONTEXTUAL_LAUNCH_PROTOCOL, e as ContextualLaunchErrorCode } from '../types-BCrV2a1f.js';
 
 declare class EventEmitter {
     private events;
-    on(event: string, handler: Function): void;
-    off(event: string, handler: Function): void;
+    on(event: string, handler: (data?: any) => void): void;
+    off(event: string, handler: (data?: any) => void): void;
     emit(event: string, data?: any): void;
 }
 
@@ -36,7 +36,8 @@ declare function buildContextualLaunchUrl(application: ContextualLaunchApplicati
 declare class ContextualLaunchAdapter {
     private readonly options;
     constructor(options: ContextualLaunchAdapterOptions);
-    launch(search?: string): Promise<'reused' | 'authenticated'>;
+    launch(search?: string): Promise<'reused' | 'redirected'>;
+    complete(search?: string): Promise<void>;
 }
 
 export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch };
