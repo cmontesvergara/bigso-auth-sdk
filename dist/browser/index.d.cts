@@ -40,4 +40,7 @@ declare class ContextualLaunchAdapter {
     complete(search?: string): Promise<void>;
 }
 
-export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch };
+declare function buildTopLevelAuthUrl(options: BigsoAuthOptions, codeChallenge: string, state: string, nonce: string): string;
+declare function completeTopLevelAuth(options: Pick<BigsoAuthOptions, 'jwksUrl' | 'audience'>, search?: string): Promise<BigsoAuthResult>;
+
+export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, buildContextualLaunchUrl, buildTopLevelAuthUrl, completeTopLevelAuth, normalizeReturnPath, parseContextualLaunch };

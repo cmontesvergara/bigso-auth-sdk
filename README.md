@@ -41,6 +41,11 @@ npm install @bigso/auth-sdk
 
 ### Browser (iframe login)
 
+Cuando el portal conserva un hint local de sesión global, el iframe emite
+`sso-top-level-required`. El SDK navega a `/auth/launch` con el mismo `state`, nonce y PKCE. El
+callback registrado usa `completeTopLevelAuth(...)` para verificar y consumir la transacción antes
+del exchange. La cookie global permanece `SameSite=Lax` y nunca se consume en el iframe cross-site.
+
 ```typescript
 import { BigsoAuth } from '@bigso/auth-sdk';
 

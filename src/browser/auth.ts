@@ -3,6 +3,7 @@ import { generateRandomId, generateVerifier, sha256Base64Url } from '../utils/cr
 import { EventEmitter } from '../utils/events'
 import { verifySignedPayload } from '../utils/jws'
 import { buildSsoFrameUrl } from './urls'
+import { buildTopLevelAuthUrl, EMBEDDED_AUTH_TRANSACTION_KEY } from './topLevelAuth'
 
 export class BigsoAuth extends EventEmitter {
     private options: Required<Omit<BigsoAuthOptions, 'audience' | 'tenantId'>>
@@ -44,7 +45,9 @@ export class BigsoAuth extends EventEmitter {
         const requestId = this.requestId
         const codeChallenge = await sha256Base64Url(verifier)
 
-        sessionStorage.setItem('sso_ctx', JSON.stringify({ state, nonce, verifier, requestId }))
+        sessionStorage.setItem(EMBEDDED_AUTH_TRANSACTION_KEY, JSON.stringify({
+            state, nonce, verifier, requestId, createdAt: Date.now(),
+        }))
 
         this.createUI()
 
@@ -127,7 +130,7 @@ export class BigsoAuth extends EventEmitter {
 
                     try {
                         const payload = msg.payload as SsoSuccessPayload
-                        const ctx = JSON.parse(sessionStorage.getItem('sso_ctx') || '{}')
+                        const ctx = JSON.parse(sessionStorage.getItem(EMBEDDED_AUTH_TRANSACTION_KEY) || '{}')
 
                         if (payload.state !== ctx.state) {
                             throw new Error('Invalid state')
@@ -189,6 +192,16 @@ export class BigsoAuth extends EventEmitter {
                         this.emit('error', errorPayload)
                         reject(errorPayload)
                     }
+                }
+
+                if (msg.type === 'sso-top-level-required') {
+                    this.debug('El iframe encontró indicio de sesión global; continuando top-level')
+                    clearTimeout(this.timeoutId)
+                    this.closeUI()
+                    cleanup()
+                    this.emit('fallback')
+                    window.location.assign(buildTopLevelAuthUrl(this.options, codeChallenge, state, nonce))
+                    return
                 }
 
                 if (msg.type === 'sso-close') {
@@ -346,18 +359,8 @@ export class BigsoAuth extends EventEmitter {
     // ─── Helpers ──────────────────────────────────────────────────────
 
     private buildFallbackUrl(codeChallenge: string, state: string): string {
-        const url = new URL(this.options.ssoOrigin)
-        url.searchParams.set('app_id', this.options.clientId)
-        url.searchParams.set('redirect_uri', this.options.redirectUri || window.location.origin)
-        url.searchParams.set('response_type', 'code')
-        url.searchParams.set('state', state)
-        url.searchParams.set('code_challenge', codeChallenge)
-        url.searchParams.set('code_challenge_method', 'S256')
-        url.searchParams.set('client_id', this.options.clientId)
-        if (this.options.tenantId) {
-            url.searchParams.set('tenant_id', this.options.tenantId)
-        }
-        return url.toString()
+        const ctx = JSON.parse(sessionStorage.getItem(EMBEDDED_AUTH_TRANSACTION_KEY) || '{}')
+        return buildTopLevelAuthUrl(this.options, codeChallenge, state, ctx.nonce || generateRandomId())
     }
 
     private debug(...args: any[]) {
