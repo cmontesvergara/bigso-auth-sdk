@@ -48,53 +48,6 @@ function buildSsoFrameUrl(ssoOrigin, clientId, tenantId) {
   return url.toString();
 }
 
-// src/browser/topLevelAuth.ts
-var EMBEDDED_AUTH_TRANSACTION_KEY = "sso_ctx";
-function buildTopLevelAuthUrl(options, codeChallenge, state, nonce) {
-  const redirectUri = options.redirectUri || `${window.location.origin}${window.location.pathname}`;
-  const url = new URL("/auth/launch", options.ssoOrigin);
-  url.searchParams.set("app_id", options.clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("state", state);
-  url.searchParams.set("nonce", nonce);
-  url.searchParams.set("code_challenge", codeChallenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  if (options.tenantId) url.searchParams.set("tenant_id", options.tenantId);
-  return url.toString();
-}
-async function completeTopLevelAuth(options, search = window.location.search) {
-  const params = new URLSearchParams(search);
-  const state = params.get("state");
-  const signedPayload = params.get("payload");
-  const raw = sessionStorage.getItem(EMBEDDED_AUTH_TRANSACTION_KEY);
-  if (!raw || !state || !signedPayload) throw new Error("invalid_launch_context");
-  const transaction = JSON.parse(raw);
-  sessionStorage.removeItem(EMBEDDED_AUTH_TRANSACTION_KEY);
-  if (transaction.state !== state || Date.now() - transaction.createdAt > 5 * 60 * 1e3) {
-    throw new Error("authorization_expired");
-  }
-  const decoded = await verifySignedPayload(
-    signedPayload,
-    options.jwksUrl,
-    options.audience ?? window.location.origin
-  );
-  if (decoded.nonce !== transaction.nonce) throw new Error("Invalid nonce");
-  history.replaceState({}, document.title, window.location.pathname);
-  return {
-    code: decoded.code,
-    state: decoded.state || transaction.state,
-    nonce: transaction.nonce,
-    codeVerifier: transaction.verifier,
-    signed_payload: signedPayload,
-    tenant: decoded.tenant,
-    jti: decoded.jti,
-    iss: decoded.iss,
-    aud: typeof decoded.aud === "string" ? decoded.aud : void 0,
-    exp: decoded.exp,
-    iat: decoded.iat
-  };
-}
-
 // src/browser/auth.ts
 var BigsoAuth = class extends EventEmitter {
   constructor(options) {
@@ -122,13 +75,7 @@ var BigsoAuth = class extends EventEmitter {
     const verifier = generateVerifier();
     const requestId = this.requestId;
     const codeChallenge = await sha256Base64Url(verifier);
-    sessionStorage.setItem(EMBEDDED_AUTH_TRANSACTION_KEY, JSON.stringify({
-      state,
-      nonce,
-      verifier,
-      requestId,
-      createdAt: Date.now()
-    }));
+    sessionStorage.setItem("sso_ctx", JSON.stringify({ state, nonce, verifier, requestId }));
     this.createUI();
     return new Promise((resolve, reject) => {
       this.abortController = new AbortController();
@@ -197,7 +144,7 @@ var BigsoAuth = class extends EventEmitter {
           clearTimeout(this.timeoutId);
           try {
             const payload = msg.payload;
-            const ctx = JSON.parse(sessionStorage.getItem(EMBEDDED_AUTH_TRANSACTION_KEY) || "{}");
+            const ctx = JSON.parse(sessionStorage.getItem("sso_ctx") || "{}");
             if (payload.state !== ctx.state) {
               throw new Error("Invalid state");
             }
@@ -250,15 +197,6 @@ var BigsoAuth = class extends EventEmitter {
             this.emit("error", errorPayload);
             reject(errorPayload);
           }
-        }
-        if (msg.type === "sso-top-level-required") {
-          this.debug("El iframe encontr\xF3 indicio de sesi\xF3n global; continuando top-level");
-          clearTimeout(this.timeoutId);
-          this.closeUI();
-          cleanup();
-          this.emit("fallback");
-          window.location.assign(buildTopLevelAuthUrl(this.options, codeChallenge, state, nonce));
-          return;
         }
         if (msg.type === "sso-close") {
           this.debug("sso-close recibido");
@@ -397,8 +335,18 @@ var BigsoAuth = class extends EventEmitter {
   }
   // ─── Helpers ──────────────────────────────────────────────────────
   buildFallbackUrl(codeChallenge, state) {
-    const ctx = JSON.parse(sessionStorage.getItem(EMBEDDED_AUTH_TRANSACTION_KEY) || "{}");
-    return buildTopLevelAuthUrl(this.options, codeChallenge, state, ctx.nonce || generateRandomId());
+    const url = new URL(this.options.ssoOrigin);
+    url.searchParams.set("app_id", this.options.clientId);
+    url.searchParams.set("redirect_uri", this.options.redirectUri || window.location.origin);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("state", state);
+    url.searchParams.set("code_challenge", codeChallenge);
+    url.searchParams.set("code_challenge_method", "S256");
+    url.searchParams.set("client_id", this.options.clientId);
+    if (this.options.tenantId) {
+      url.searchParams.set("tenant_id", this.options.tenantId);
+    }
+    return url.toString();
   }
   debug(...args) {
     if (this.options.debug) {
@@ -506,8 +454,6 @@ export {
   CONTEXTUAL_LAUNCH_PROTOCOL,
   ContextualLaunchAdapter,
   buildContextualLaunchUrl,
-  buildTopLevelAuthUrl,
-  completeTopLevelAuth,
   normalizeReturnPath,
   parseContextualLaunch
 };

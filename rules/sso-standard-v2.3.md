@@ -386,9 +386,6 @@ El SSO Core debe rechazar con `403` cualquier request a `/embed` cuyo `Referer` 
 # 🧩 11. Consideraciones de Diseño
 
 - El iframe es canal de transporte, no de sesión
-- Un hint local del portal puede solicitar `sso-top-level-required`, pero nunca autentica
-- La continuación top-level reutiliza `state`, nonce y PKCE S256 y vuelve sólo a un redirect registrado
-- La cookie global permanece `SameSite=Lax`; no se consume desde un iframe cross-site
 - El SSO es stateless respecto al frontend
 - Cada app mantiene su sesión
 - El protocolo es extensible: device binding, silent auth, step-up authentication
