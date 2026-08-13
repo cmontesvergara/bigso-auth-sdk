@@ -373,8 +373,8 @@ Cada `client_id` registrado debe tener una lista de origins autorizados:
     "https://admin.bigso.co"
   ],
   "allowed_redirect_uris": [
-    "https://app.bigso.co/auth/callback",
-    "https://admin.bigso.co/auth/callback"
+    "https://app.bigso.co/launch",
+    "https://admin.bigso.co/launch"
   ]
 }
 ```

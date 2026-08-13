@@ -273,10 +273,22 @@ MIT © Bigso
 # Contextual App Launch v1
 
 El SDK exporta `buildContextualLaunchUrl` para cualquier launcher y
-`ContextualLaunchAdapter` para la ruta `/launch` de una aplicación destino. El
-adaptador reutiliza una sesión propia cuando coincide el tenant o inicia el SSO
-existente con PKCE y `tenantId` como hint. `normalizeReturnPath` bloquea open
-redirects.
+`ContextualLaunchAdapter` para la ruta técnica única `/launch` de una aplicación
+destino. El adaptador reutiliza una sesión propia cuando coincide el tenant o
+inicia el SSO existente con PKCE y `tenantId` como hint. `normalizeReturnPath`
+bloquea open redirects.
+
+El login manual también DEBE registrar y usar `https://<origen>/launch` como
+`redirect_uri`. La ruta distingue los dos casos sin confiar en parámetros no
+verificados:
+
+- con una transacción PKCE manual pendiente y `payload`, completa el login;
+- con contexto `bigso-context-launch-v1`, delega en `ContextualLaunchAdapter`;
+- sin una transacción válida, libera el overlay y muestra un error recuperable.
+
+`/auth/callback`, `/callback` o la pantalla pública de login pueden conservarse
+temporalmente como alias de compatibilidad, pero no deben registrarse en IAM ni
+iniciar flujos nuevos.
 
 En el middleware destino se monta `createContextualLaunchRouter` junto a
 `createSsoAuthRouter`; `/session` permite al adaptador comprobar una sesión
