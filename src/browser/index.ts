@@ -1,4 +1,5 @@
 export { BigsoAuth } from './auth'
 export { ContextualLaunchAdapter, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch } from './contextualLaunch'
+export { logout, logoutApplication, logoutGlobally } from './logout'
 export { CONTEXTUAL_LAUNCH_PROTOCOL } from '../types'
-export type { BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, ContextualLaunchErrorCode } from '../types'
+export type { BigsoAuthOptions, BigsoAuthResult, BrowserLogoutOptions, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, ContextualLaunchErrorCode, LogoutRequest, LogoutResult, LogoutScope } from '../types'

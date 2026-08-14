@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { BigsoSsoClient } from '../../node/SsoClient';
 import type { V2ExchangeResponse } from '../../types';
 import { SdkLogger } from '../../utils/logger';
+import { randomUUID } from 'node:crypto';
 
 const logger = new SdkLogger('AuthSDK');
 
@@ -33,6 +34,10 @@ export interface CreateSsoAuthRouterOptions {
     frontendUrl: string;
     onLoginSuccess?: (session: V2ExchangeResponse) => void | Promise<void>;
     onLogout?: (accessToken: string) => void | Promise<void>;
+    /** Top-level Identity route that owns the global SSO cookie. */
+    identityLogoutUrl?: string;
+    /** Exactly registered application receiver. Defaults to `${frontendUrl}/launch`. */
+    logoutReturnUri?: string;
     /**
      * Configuración de cookies personalizadas.
      * Si se proporciona, el router usará esta cookie en lugar de extraer
@@ -272,18 +277,27 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             ? req.headers.authorization.substring(7)
             : '';
 
+        const scope = req.body?.scope ?? (req.body?.revokeAll ? 'global' : 'application');
+        if (scope !== 'application' && scope !== 'global') {
+            res.status(400).json({ error: 'unsupported_logout_scope' });
+            return;
+        }
+
+        let revocationSucceeded = true;
         try {
             if (accessToken) {
                 // Only attempt SSO-core revocation when we actually have a token
-                await options.ssoClient.logout(accessToken, req.body?.revokeAll ?? false);
+                await options.ssoClient.logout(accessToken, { scope });
             } else {
                 logger.warn('Logout called without access token — skipping SSO-core revocation, clearing cookies anyway.');
+                if (scope === 'global') revocationSucceeded = false;
             }
 
             if (options.onLogout) {
                 await options.onLogout(accessToken);
             }
         } catch (error: any) {
+            revocationSucceeded = false;
             logger.warn('Failed to logout in SSO Backend', { message: error.message });
             // Continue — always clear cookies and respond regardless of sso-core error
         } finally {
@@ -301,15 +315,37 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
             // Always respond so the client doesn't time out
             if (!res.headersSent) {
-                res.status(200).json({ success: true, message: 'Logged out' });
+                if (scope === 'global' && (!revocationSucceeded || !options.identityLogoutUrl)) {
+                    res.status(502).json({ error: 'global_logout_unavailable' });
+                    return;
+                }
+
+                if (scope === 'global') {
+                    const state = randomUUID();
+                    const continuation = new URL(options.identityLogoutUrl as string);
+                    continuation.searchParams.set('app_id', options.ssoClient.getClientOptions().appId);
+                    continuation.searchParams.set(
+                        'return_uri',
+                        options.logoutReturnUri ?? `${options.frontendUrl.replace(/\/$/, '')}/launch`,
+                    );
+                    continuation.searchParams.set('state', state);
+                    continuation.searchParams.set('transition', 'bigso-overlay-v1');
+                    res.status(200).json({
+                        success: true,
+                        scope,
+                        continueUrl: continuation.toString(),
+                        state,
+                    });
+                    return;
+                }
+
+                res.status(200).json({ success: true, scope });
             }
         }
     });
 
     return router;
 }
-
-
 
 
 

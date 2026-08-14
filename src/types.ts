@@ -122,6 +122,30 @@ export interface V2AuthorizeResponse {
     state?: string
 }
 
+export type LogoutScope = 'application' | 'global'
+
+export interface LogoutRequest {
+    scope: LogoutScope
+}
+
+export interface LogoutResult {
+    success: boolean
+    scope: LogoutScope
+    continueUrl?: string
+    state?: string
+}
+
+export interface BrowserLogoutOptions {
+    scope: LogoutScope
+    endpoint?: string
+    identityOrigin?: string
+    fetch?: typeof globalThis.fetch
+    navigate?: (url: string) => void
+    onTransitionStart?: () => void | Promise<void>
+    onTransitionError?: (error: Error) => void | Promise<void>
+    storage?: Pick<Storage, 'setItem'>
+}
+
 export interface BigsoAuthResult {
     code: string
     state: string

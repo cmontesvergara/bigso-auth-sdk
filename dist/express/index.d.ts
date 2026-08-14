@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.js';
-import { S as SsoJwtTenant, f as SsoTokenPayload, V as V2ExchangeResponse } from '../types-BCrV2a1f.js';
+import { S as SsoJwtTenant, i as SsoTokenPayload, V as V2ExchangeResponse } from '../types-CksaxGxL.js';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -54,6 +54,10 @@ interface CreateSsoAuthRouterOptions {
     frontendUrl: string;
     onLoginSuccess?: (session: V2ExchangeResponse) => void | Promise<void>;
     onLogout?: (accessToken: string) => void | Promise<void>;
+    /** Top-level Identity route that owns the global SSO cookie. */
+    identityLogoutUrl?: string;
+    /** Exactly registered application receiver. Defaults to `${frontendUrl}/launch`. */
+    logoutReturnUri?: string;
     /**
      * Configuración de cookies personalizadas.
      * Si se proporciona, el router usará esta cookie en lugar de extraer

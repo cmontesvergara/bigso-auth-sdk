@@ -130,7 +130,13 @@ export class BigsoSsoClient {
         }, 'refreshTokens') as V2RefreshResponse;
     }
 
-    async logout(accessToken: string, revokeAll: boolean = false): Promise<void> {
+    /** @deprecated Pass `{ scope: 'application' | 'global' }` instead of a boolean. */
+    async logout(accessToken: string, revokeAll?: boolean): Promise<void>;
+    async logout(accessToken: string, options?: { scope: 'application' | 'global' }): Promise<void>;
+    async logout(
+        accessToken: string,
+        options: boolean | { scope: 'application' | 'global' } = { scope: 'application' },
+    ): Promise<void> {
         // sso-core requireds sessionId (= jti of the access token) in the body
         let sessionId: string | undefined;
         try {
@@ -144,13 +150,20 @@ export class BigsoSsoClient {
             // the SDK's handler in createSsoAuthRouter already clears cookies anyway.
         }
 
+        const scope = typeof options === 'boolean'
+            ? (options ? 'global' : 'application')
+            : options.scope
+        if (scope !== 'application' && scope !== 'global') {
+            throw new Error('Unsupported logout scope')
+        }
+
         await this.performFetch(this.authUrl('logout'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${accessToken}`,
             },
-            body: JSON.stringify({ revokeAll, sessionId }),
+            body: JSON.stringify({ scope, isGlobal: scope === 'global', sessionId }),
             credentials: 'include',
         }, 'logout');
     }

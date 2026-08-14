@@ -1,4 +1,5 @@
-import { f as SsoTokenPayload, g as V2LoginResponse, V as V2ExchangeResponse, h as V2RefreshResponse } from '../types-BCrV2a1f.js';
+import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2RefreshResponse } from '../types-CksaxGxL.js';
+export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-CksaxGxL.js';
 
 interface SsoClientOptions {
     ssoBackendUrl: string;
@@ -24,7 +25,11 @@ declare class BigsoSsoClient {
     login(emailOrNuid: string, password: string): Promise<V2LoginResponse>;
     exchangeCode(code: string, codeVerifier: string): Promise<V2ExchangeResponse>;
     refreshTokens(refreshToken: string, tenantId: string): Promise<V2RefreshResponse>;
+    /** @deprecated Pass `{ scope: 'application' | 'global' }` instead of a boolean. */
     logout(accessToken: string, revokeAll?: boolean): Promise<void>;
+    logout(accessToken: string, options?: {
+        scope: 'application' | 'global';
+    }): Promise<void>;
     session(sessionId: string, appId: string): Promise<any>;
     getClientOptions(): SsoClientOptions;
 }

@@ -100,7 +100,7 @@ var BigsoSsoClient = class {
       credentials: "include"
     }, "refreshTokens");
   }
-  async logout(accessToken, revokeAll = false) {
+  async logout(accessToken, options = { scope: "application" }) {
     let sessionId;
     try {
       const parts = accessToken.split(".");
@@ -110,13 +110,17 @@ var BigsoSsoClient = class {
       }
     } catch {
     }
+    const scope = typeof options === "boolean" ? options ? "global" : "application" : options.scope;
+    if (scope !== "application" && scope !== "global") {
+      throw new Error("Unsupported logout scope");
+    }
     await this.performFetch(this.authUrl("logout"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${accessToken}`
       },
-      body: JSON.stringify({ revokeAll, sessionId }),
+      body: JSON.stringify({ scope, isGlobal: scope === "global", sessionId }),
       credentials: "include"
     }, "logout");
   }

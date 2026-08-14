@@ -301,3 +301,32 @@ app.use('/api/auth', createSsoAuthRouter({ ssoClient, frontendUrl, cookieConfig 
 
 El origen sólo consume `launchUrl` y `launchProtocol` procedentes de IAM. Nunca
 construye hosts ni añade credenciales al enlace.
+
+# Logout del ecosistema v1
+
+El SDK usa scopes nominales y conserva temporalmente el booleano anterior:
+
+```ts
+await client.logout(accessToken, { scope: 'application' })
+await client.logout(accessToken, { scope: 'global' })
+
+// Compatibilidad deprecada durante una versión minor:
+await client.logout(accessToken, true)
+```
+
+El router Express recibe `POST /logout` con `{ scope }`. Para habilitar logout
+global se configuran `identityLogoutUrl` y el receptor registrado:
+
+```ts
+createSsoAuthRouter({
+  ssoClient,
+  frontendUrl: 'https://app.example',
+  identityLogoutUrl: 'https://auth.bigso.cloud/auth/sign-out',
+  logoutReturnUri: 'https://app.example/launch',
+  cookieConfig,
+})
+```
+
+En navegador, `logoutApplication()` limpia sólo la aplicación y
+`logoutGlobally()` valida que `continueUrl` pertenezca al origen de Identity,
+guarda el state efímero y navega top-level. El SDK no incluye el botón ni CSS.

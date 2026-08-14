@@ -95,6 +95,7 @@ function ssoSyncGuardMiddleware(options) {
 
 // src/express/routes/createSsoAuthRouter.ts
 import { Router } from "express";
+import { randomUUID } from "crypto";
 var logger2 = new SdkLogger("AuthSDK");
 var activeRefreshes = /* @__PURE__ */ new Map();
 function getRefreshKey(token) {
@@ -279,16 +280,24 @@ function createSsoAuthRouter(options) {
   });
   router.post("/logout", async (req, res) => {
     const accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
+    const scope = req.body?.scope ?? (req.body?.revokeAll ? "global" : "application");
+    if (scope !== "application" && scope !== "global") {
+      res.status(400).json({ error: "unsupported_logout_scope" });
+      return;
+    }
+    let revocationSucceeded = true;
     try {
       if (accessToken) {
-        await options.ssoClient.logout(accessToken, req.body?.revokeAll ?? false);
+        await options.ssoClient.logout(accessToken, { scope });
       } else {
         logger2.warn("Logout called without access token \u2014 skipping SSO-core revocation, clearing cookies anyway.");
+        if (scope === "global") revocationSucceeded = false;
       }
       if (options.onLogout) {
         await options.onLogout(accessToken);
       }
     } catch (error) {
+      revocationSucceeded = false;
       logger2.warn("Failed to logout in SSO Backend", { message: error.message });
     } finally {
       const cookieConfig = options.cookieConfig;
@@ -299,7 +308,29 @@ function createSsoAuthRouter(options) {
         }
       }
       if (!res.headersSent) {
-        res.status(200).json({ success: true, message: "Logged out" });
+        if (scope === "global" && (!revocationSucceeded || !options.identityLogoutUrl)) {
+          res.status(502).json({ error: "global_logout_unavailable" });
+          return;
+        }
+        if (scope === "global") {
+          const state = randomUUID();
+          const continuation = new URL(options.identityLogoutUrl);
+          continuation.searchParams.set("app_id", options.ssoClient.getClientOptions().appId);
+          continuation.searchParams.set(
+            "return_uri",
+            options.logoutReturnUri ?? `${options.frontendUrl.replace(/\/$/, "")}/launch`
+          );
+          continuation.searchParams.set("state", state);
+          continuation.searchParams.set("transition", "bigso-overlay-v1");
+          res.status(200).json({
+            success: true,
+            scope,
+            continueUrl: continuation.toString(),
+            state
+          });
+          return;
+        }
+        res.status(200).json({ success: true, scope });
       }
     }
   });

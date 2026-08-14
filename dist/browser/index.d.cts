@@ -1,5 +1,5 @@
-import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext } from '../types-BCrV2a1f.cjs';
-export { d as CONTEXTUAL_LAUNCH_PROTOCOL, e as ContextualLaunchErrorCode } from '../types-BCrV2a1f.cjs';
+import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext, d as BrowserLogoutOptions, L as LogoutResult } from '../types-CksaxGxL.cjs';
+export { e as CONTEXTUAL_LAUNCH_PROTOCOL, f as ContextualLaunchErrorCode, g as LogoutRequest, h as LogoutScope } from '../types-CksaxGxL.cjs';
 
 declare class EventEmitter {
     private events;
@@ -40,4 +40,8 @@ declare class ContextualLaunchAdapter {
     complete(search?: string): Promise<void>;
 }
 
-export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, buildContextualLaunchUrl, normalizeReturnPath, parseContextualLaunch };
+declare function logout(options: BrowserLogoutOptions): Promise<LogoutResult>;
+declare function logoutApplication(options: Omit<BrowserLogoutOptions, 'scope'>): Promise<LogoutResult>;
+declare function logoutGlobally(options: Omit<BrowserLogoutOptions, 'scope'>): Promise<LogoutResult>;
+
+export { BigsoAuth, BigsoAuthOptions, BigsoAuthResult, BrowserLogoutOptions, ContextualLaunchAdapter, ContextualLaunchAdapterOptions, ContextualLaunchApplication, ContextualLaunchContext, LogoutResult, buildContextualLaunchUrl, logout, logoutApplication, logoutGlobally, normalizeReturnPath, parseContextualLaunch };
