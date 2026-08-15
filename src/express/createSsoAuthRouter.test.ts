@@ -19,6 +19,25 @@ async function serve(client: any) {
     return { server, url: `http://127.0.0.1:${address.port}/auth/tenant-context` };
 }
 
+async function serveRefresh(client: any) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+        (req as any).cookies = { 'app-session': 'session-a', 'app-refresh': 'refresh-a' };
+        next();
+    });
+    app.use('/auth', createSsoAuthRouter({
+        ssoClient: client,
+        frontendUrl: 'https://app.bigso.test',
+        cookieConfig,
+    }));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    return { server, url: `http://127.0.0.1:${address.port}/auth/refresh` };
+}
+
 describe('tenant session replacement route', () => {
     const servers: any[] = [];
     afterEach(async () => {
@@ -61,5 +80,47 @@ describe('tenant session replacement route', () => {
         expect(response.status).toBe(401);
         expect(response.headers.getSetCookie()).toHaveLength(3);
         expect(await response.json()).toEqual({ error: 'tenant_switch_failed' });
+    });
+});
+
+describe('refresh route', () => {
+    const servers: any[] = [];
+    afterEach(async () => {
+        await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    });
+
+    it('rotates the app-session cookie and preserves tenant permissions', async () => {
+        const client = {
+            refreshTokens: vi.fn().mockResolvedValue({
+                success: true,
+                tokens: {
+                    jti: 'session-b',
+                    accessToken: 'access-b',
+                    refreshToken: 'refresh-b',
+                    expiresIn: 900,
+                },
+                currentTenant: {
+                    id: 'tenant-a',
+                    permissions: [{ resource: 'orders', action: 'read' }],
+                },
+                relatedTenants: [],
+            }),
+        };
+        const running = await serveRefresh(client);
+        servers.push(running.server);
+
+        const response = await fetch(running.url, {
+            method: 'POST',
+            headers: { 'x-tenant-id': 'tenant-a' },
+        });
+
+        expect(response.status).toBe(200);
+        const cookies = response.headers.getSetCookie();
+        expect(cookies.some((cookie) => cookie.startsWith('app-session=session-b'))).toBe(true);
+        expect(cookies.some((cookie) => cookie.startsWith('app-refresh=refresh-b'))).toBe(true);
+        expect(cookies.some((cookie) => cookie.startsWith('app-permissions=orders%3Aread'))).toBe(true);
+        const body = await response.json();
+        expect(body.currentTenant.permissions).toEqual([{ resource: 'orders', action: 'read' }]);
+        expect(body.tokens).not.toHaveProperty('refreshToken');
     });
 });

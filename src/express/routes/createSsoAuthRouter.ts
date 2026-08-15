@@ -210,6 +210,18 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const ssoResponse = await refreshPromise;
             const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
 
+            if (cookieConfig && ssoResponse.tokens?.jti) {
+                res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: cookieSameSite,
+                    path: cookieConfig.sessionPath,
+                    maxAge,
+                    domain: cookieDomain
+                });
+                logger.info('Session cookie rotated after refresh');
+            }
+
             if (ssoResponse.tokens?.refreshToken) {
                 const newToken = ssoResponse.tokens.refreshToken;
                 res.cookie(cookieConfig?.refreshName as string, newToken, {
@@ -248,9 +260,11 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 logger.warn('No permissions received in refresh response — permissions cookie NOT updated');
             }
 
+            const publicTokens = { ...ssoResponse.tokens };
+            delete publicTokens.refreshToken;
             res.json({
-                success: true,
-                tokens: ssoResponse.tokens,
+                ...ssoResponse,
+                tokens: publicTokens,
             });
         } catch (error: any) {
             logger.error('Error refreshing tokens', { message: error.message });
@@ -403,4 +417,3 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
     return router;
 }
-

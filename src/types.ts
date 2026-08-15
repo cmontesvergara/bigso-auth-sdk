@@ -114,11 +114,15 @@ export interface V2ExchangeResponse {
 export interface V2RefreshResponse {
     success: boolean
     tokens: {
+        jti: string
         accessToken: string
         expiresIn: number
         refreshToken?: string
     }
     currentTenant?: SsoTenant
+    relatedTenants?: SsoTenant[]
+    activeApplications?: ActiveSessionApplication[]
+    user?: SsoUser
 }
 
 export interface V2AuthorizeResponse {
