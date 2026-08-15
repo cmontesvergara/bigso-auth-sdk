@@ -1,3 +1,9 @@
+## [0.14.1](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.0...v0.14.1) (2026-08-15)
+
+### Correcciones
+
+* **express:** support cookie-backed tenant replacement ([16a10e5](https://github.com/cmontesvergara/bigso-auth-sdk/commit/16a10e5ca1970fcc9552fcba202aef47df11c2dc))
+
 ## [0.14.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.13.0...v0.14.0) (2026-08-15)
 
 ### Nuevas funcionalidades
