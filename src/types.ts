@@ -61,6 +61,12 @@ export interface SsoTenant {
     }>
 }
 
+export interface ActiveSessionApplication {
+    appId: string
+    name: string
+    logoUrl: string | null
+}
+
 export interface SsoJwtTenant {
     id: string
     name: string
@@ -102,6 +108,7 @@ export interface V2ExchangeResponse {
     user: SsoUser
     currentTenant: SsoTenant
     relatedTenants: SsoTenant[]
+    activeApplications: ActiveSessionApplication[]
 }
 
 export interface V2RefreshResponse {

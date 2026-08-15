@@ -1,5 +1,5 @@
-import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2RefreshResponse } from '../types-CksaxGxL.cjs';
-export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-CksaxGxL.cjs';
+import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2RefreshResponse } from '../types-CVG332FB.cjs';
+export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-CVG332FB.cjs';
 
 interface SsoClientOptions {
     ssoBackendUrl: string;

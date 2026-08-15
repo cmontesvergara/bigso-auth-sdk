@@ -1,5 +1,5 @@
-import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext, d as BrowserLogoutOptions, L as LogoutResult } from '../types-CksaxGxL.cjs';
-export { e as CONTEXTUAL_LAUNCH_PROTOCOL, f as ContextualLaunchErrorCode, g as LogoutRequest, h as LogoutScope } from '../types-CksaxGxL.cjs';
+import { B as BigsoAuthOptions, a as BigsoAuthResult, C as ContextualLaunchAdapterOptions, b as ContextualLaunchApplication, c as ContextualLaunchContext, d as BrowserLogoutOptions, L as LogoutResult } from '../types-CVG332FB.cjs';
+export { e as CONTEXTUAL_LAUNCH_PROTOCOL, f as ContextualLaunchErrorCode, g as LogoutRequest, h as LogoutScope } from '../types-CVG332FB.cjs';
 
 declare class EventEmitter {
     private events;
