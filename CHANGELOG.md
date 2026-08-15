@@ -1,3 +1,9 @@
+## [0.14.2](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.1...v0.14.2) (2026-08-15)
+
+### Correcciones
+
+* **node:** redact authentication payloads from logs ([dafdadc](https://github.com/cmontesvergara/bigso-auth-sdk/commit/dafdadcc8adc221a8b2530912c0160fdf4abaea8))
+
 ## [0.14.1](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.0...v0.14.1) (2026-08-15)
 
 ### Correcciones
