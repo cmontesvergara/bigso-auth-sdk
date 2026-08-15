@@ -33,28 +33,26 @@ export class BigsoSsoClient {
 
     private async performFetch(url: string, options: RequestInit, operation: string): Promise<any> {
         console.log(`[BigsoSsoClient] 🚀 START ${operation} | URL: ${url}`);
-        console.log(`[BigsoSsoClient] 📦 Request Body:`, options.body);
         
         try {
             const response = await fetch(url, options);
             console.log(`[BigsoSsoClient] 📥 END ${operation} | Status: ${response.status} ${response.statusText}`);
-            
-            const responseHeaders: Record<string, string> = {};
-            response.headers.forEach((value, key) => { responseHeaders[key] = value; });
-            console.log(`[BigsoSsoClient] 📑 Response Headers:`, responseHeaders);
 
             const text = await response.text();
-            console.log(`[BigsoSsoClient] 📄 Response Body (${text.length} bytes):`, text ? text.substring(0, 1500) : '<empty>');
+            console.log(`[BigsoSsoClient] 📄 Response received (${text.length} bytes)`);
 
             if (!response.ok) {
                 let err: any = {};
                 try {
                     err = JSON.parse(text);
                 } catch {
-                    err = { message: `Raw text: ${text.substring(0, 250)}` };
+                    err = {};
                 }
                 const errorMsg = err.message || `${operation} failed (status: ${response.status})`;
-                console.error(`[BigsoSsoClient] ❌ Error in ${operation}:`, errorMsg, ' | Details:', err);
+                console.error(`[BigsoSsoClient] ❌ Error in ${operation}:`, errorMsg, {
+                    status: response.status,
+                    error: err.error,
+                });
                 throw new Error(errorMsg);
             }
 
@@ -141,11 +139,9 @@ export class BigsoSsoClient {
     }
 
     async refreshTokens(refreshToken: string, tenantId: string): Promise<V2RefreshResponse> {
-        console.log('TENANT EN refreshTokens:', tenantId);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
         const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
-        console.log('🔄 Refreshing tokens with payload:', { refreshToken, appId: this.appId, tenantId: tenantId });
         
         return await this.performFetch(this.authUrl('refresh'), {
             method: 'POST',

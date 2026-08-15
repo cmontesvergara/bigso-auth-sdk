@@ -68,26 +68,23 @@ var BigsoSsoClient = class {
   }
   async performFetch(url, options, operation) {
     console.log(`[BigsoSsoClient] \u{1F680} START ${operation} | URL: ${url}`);
-    console.log(`[BigsoSsoClient] \u{1F4E6} Request Body:`, options.body);
     try {
       const response = await fetch(url, options);
       console.log(`[BigsoSsoClient] \u{1F4E5} END ${operation} | Status: ${response.status} ${response.statusText}`);
-      const responseHeaders = {};
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
-      });
-      console.log(`[BigsoSsoClient] \u{1F4D1} Response Headers:`, responseHeaders);
       const text = await response.text();
-      console.log(`[BigsoSsoClient] \u{1F4C4} Response Body (${text.length} bytes):`, text ? text.substring(0, 1500) : "<empty>");
+      console.log(`[BigsoSsoClient] \u{1F4C4} Response received (${text.length} bytes)`);
       if (!response.ok) {
         let err = {};
         try {
           err = JSON.parse(text);
         } catch {
-          err = { message: `Raw text: ${text.substring(0, 250)}` };
+          err = {};
         }
         const errorMsg = err.message || `${operation} failed (status: ${response.status})`;
-        console.error(`[BigsoSsoClient] \u274C Error in ${operation}:`, errorMsg, " | Details:", err);
+        console.error(`[BigsoSsoClient] \u274C Error in ${operation}:`, errorMsg, {
+          status: response.status,
+          error: err.error
+        });
         throw new Error(errorMsg);
       }
       if (!text) return null;
@@ -158,10 +155,8 @@ var BigsoSsoClient = class {
     }, "authorizeTenant");
   }
   async refreshTokens(refreshToken, tenantId) {
-    console.log("TENANT EN refreshTokens:", tenantId);
     const headers = { "Content-Type": "application/json" };
     const body = JSON.stringify({ refreshToken, appId: this.appId, tenantId });
-    console.log("\u{1F504} Refreshing tokens with payload:", { refreshToken, appId: this.appId, tenantId });
     return await this.performFetch(this.authUrl("refresh"), {
       method: "POST",
       headers,
