@@ -1,3 +1,9 @@
+## [0.14.3](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.2...v0.14.3) (2026-08-15)
+
+### Correcciones
+
+* **express:** rotate application session context on refresh ([7127b72](https://github.com/cmontesvergara/bigso-auth-sdk/commit/7127b72f88b450f9fe9bcf7568af77538a6bc526))
+
 ## [0.14.2](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.1...v0.14.2) (2026-08-15)
 
 ### Correcciones
