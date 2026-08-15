@@ -1,0 +1,65 @@
+import express from 'express';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createSsoAuthRouter, type CookieConfig } from './routes/createSsoAuthRouter';
+
+const cookieConfig: CookieConfig = {
+    sessionName: 'app-session', refreshName: 'app-refresh', permissionName: 'app-permissions',
+    domain: '', sessionPath: '/', refreshPath: '/', permissionPath: '/', sameSite: 'lax', maxAge: 60_000,
+};
+
+async function serve(client: any) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { (req as any).cookies = { 'app-session': 'session-a' }; next(); });
+    app.use('/auth', createSsoAuthRouter({ ssoClient: client, frontendUrl: 'https://app.bigso.test', cookieConfig }));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    return { server, url: `http://127.0.0.1:${address.port}/auth/tenant-context` };
+}
+
+describe('tenant session replacement route', () => {
+    const servers: any[] = [];
+    afterEach(async () => {
+        await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    });
+
+    it('uses the HttpOnly application session when the browser sends no bearer token', async () => {
+        const client = {
+            getClientOptions: () => ({ appId: 'app-a' }),
+            session: vi.fn().mockResolvedValue({ tokens: { accessToken: 'access-a' } }),
+            authorizeTenant: vi.fn().mockResolvedValue({ code: 'code-b' }),
+            exchangeCode: vi.fn().mockResolvedValue({
+                success: true,
+                tokens: { jti: 'session-b', accessToken: 'access-b', refreshToken: 'refresh-b' },
+                currentTenant: { id: 'tenant-b', permissions: [{ resource: 'orders', action: 'read' }] },
+            }),
+        };
+        const running = await serve(client);
+        servers.push(running.server);
+        const response = await fetch(running.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: 'tenant-b' }) });
+
+        expect(response.status).toBe(200);
+        expect(client.session).toHaveBeenCalledWith('session-a', 'app-a');
+        expect(client.authorizeTenant).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'access-a', tenantId: 'tenant-b' }));
+        expect(response.headers.getSetCookie()).toHaveLength(3);
+        expect(await response.json()).not.toHaveProperty('tokens.refreshToken');
+    });
+
+    it('clears every application cookie when replacement fails after authorization', async () => {
+        const client = {
+            getClientOptions: () => ({ appId: 'app-a' }),
+            session: vi.fn().mockResolvedValue({ tokens: { accessToken: 'access-a' } }),
+            authorizeTenant: vi.fn().mockResolvedValue({ code: 'code-b' }),
+            exchangeCode: vi.fn().mockRejectedValue(new Error('exchange failed')),
+        };
+        const running = await serve(client);
+        servers.push(running.server);
+        const response = await fetch(running.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId: 'tenant-b' }) });
+
+        expect(response.status).toBe(401);
+        expect(response.headers.getSetCookie()).toHaveLength(3);
+        expect(await response.json()).toEqual({ error: 'tenant_switch_failed' });
+    });
+});

@@ -275,11 +275,11 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
     });
 
     router.post('/tenant-context', async (req: import('express').Request, res: import('express').Response) => {
-        const accessToken = req.headers.authorization?.startsWith('Bearer ')
+        let accessToken = req.headers.authorization?.startsWith('Bearer ')
             ? req.headers.authorization.substring(7)
             : '';
         const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
-        if (!accessToken || !tenantId || !options.cookieConfig) {
+        if (!tenantId || !options.cookieConfig) {
             res.status(400).json({ error: 'invalid_tenant_switch_request' });
             return;
         }
@@ -287,6 +287,22 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         const verifier = randomBytes(32).toString('base64url');
         const challenge = createHash('sha256').update(verifier).digest('base64url');
         try {
+            if (!accessToken) {
+                const sessionId = req.cookies?.[options.cookieConfig.sessionName];
+                if (!sessionId) {
+                    res.status(401).json({ error: 'tenant_switch_session_required' });
+                    return;
+                }
+                const current = await options.ssoClient.session(
+                    sessionId,
+                    options.ssoClient.getClientOptions().appId,
+                );
+                accessToken = current?.tokens?.accessToken ?? current?.accessToken ?? '';
+                if (!accessToken) {
+                    res.status(401).json({ error: 'tenant_switch_session_required' });
+                    return;
+                }
+            }
             const authorization = await options.ssoClient.authorizeTenant({
                 accessToken,
                 tenantId,
@@ -300,6 +316,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             res.cookie(cookie.sessionName, session.tokens.jti, { ...base, path: cookie.sessionPath });
             res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
             res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
+            if (options.onLoginSuccess) await options.onLoginSuccess(session);
             delete (session as any).tokens.refreshToken;
             res.status(200).json(session);
         } catch (error: any) {
@@ -386,5 +403,4 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
     return router;
 }
-
 
