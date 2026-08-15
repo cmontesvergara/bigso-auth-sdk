@@ -1,5 +1,5 @@
-import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2RefreshResponse } from '../types-CVG332FB.js';
-export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-CVG332FB.js';
+import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2AuthorizeResponse, l as V2RefreshResponse } from '../types-C6UDdKXL.js';
+export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-C6UDdKXL.js';
 
 interface SsoClientOptions {
     ssoBackendUrl: string;
@@ -24,6 +24,13 @@ declare class BigsoSsoClient {
     validateAccessToken(accessToken: string): Promise<SsoTokenPayload | null>;
     login(emailOrNuid: string, password: string): Promise<V2LoginResponse>;
     exchangeCode(code: string, codeVerifier: string): Promise<V2ExchangeResponse>;
+    authorizeTenant(input: {
+        accessToken: string;
+        tenantId: string;
+        redirectUri: string;
+        codeChallenge: string;
+        state: string;
+    }): Promise<V2AuthorizeResponse>;
     refreshTokens(refreshToken: string, tenantId: string): Promise<V2RefreshResponse>;
     /** @deprecated Pass `{ scope: 'application' | 'global' }` instead of a boolean. */
     logout(accessToken: string, revokeAll?: boolean): Promise<void>;

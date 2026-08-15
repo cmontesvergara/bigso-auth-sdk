@@ -1,4 +1,4 @@
-import type { SsoTokenPayload, V2ExchangeResponse, V2LoginResponse, V2RefreshResponse } from '../types';
+import type { SsoTokenPayload, V2AuthorizeResponse, V2ExchangeResponse, V2LoginResponse, V2RefreshResponse } from '../types';
 import { verifyAccessToken, verifySignedPayload } from '../utils/jws';
 
 export interface SsoClientOptions {
@@ -113,6 +113,31 @@ export class BigsoSsoClient {
             }),
             credentials: 'include',
         }, 'exchangeCode') as V2ExchangeResponse;
+    }
+
+    async authorizeTenant(input: {
+        accessToken: string;
+        tenantId: string;
+        redirectUri: string;
+        codeChallenge: string;
+        state: string;
+    }): Promise<V2AuthorizeResponse> {
+        return await this.performFetch(this.authUrl('authorize'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${input.accessToken}`,
+            },
+            body: JSON.stringify({
+                tenantId: input.tenantId,
+                appId: this.appId,
+                redirectUri: input.redirectUri,
+                codeChallenge: input.codeChallenge,
+                codeChallengeMethod: 'S256',
+                state: input.state,
+            }),
+            credentials: 'include',
+        }, 'authorizeTenant') as V2AuthorizeResponse;
     }
 
     async refreshTokens(refreshToken: string, tenantId: string): Promise<V2RefreshResponse> {

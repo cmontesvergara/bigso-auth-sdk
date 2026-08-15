@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.js';
-import { S as SsoJwtTenant, i as SsoTokenPayload, V as V2ExchangeResponse } from '../types-CVG332FB.js';
+import { S as SsoJwtTenant, i as SsoTokenPayload, V as V2ExchangeResponse } from '../types-C6UDdKXL.js';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -58,6 +58,8 @@ interface CreateSsoAuthRouterOptions {
     identityLogoutUrl?: string;
     /** Exactly registered application receiver. Defaults to `${frontendUrl}/launch`. */
     logoutReturnUri?: string;
+    /** Registered redirect used for application-local tenant session replacement. */
+    tenantSwitchRedirectUri?: string;
     /**
      * Configuración de cookies personalizadas.
      * Si se proporciona, el router usará esta cookie en lugar de extraer

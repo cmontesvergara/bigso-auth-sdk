@@ -18,9 +18,14 @@ jobs:
       - name: Validate Conventional Commits
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then FROM="${{ github.event.pull_request.base.sha }}"; TO="${{ github.event.pull_request.head.sha }}"; else FROM="${{ github.event.before }}"; TO="${{ github.sha }}"; fi
-          if [ "$FROM" = "0000000000000000000000000000000000000000" ]; then FROM="$(git rev-list --max-parents=0 HEAD)"; fi
-          npx --yes --package @commitlint/cli@20 --package @commitlint/config-conventional@20 commitlint --config commitlint.config.mjs --from "$FROM" --to "$TO" --verbose
+          FROM="${{ github.event.pull_request.base.sha || github.event.before }}"
+          TO="${{ github.event.pull_request.head.sha || github.sha }}"
+          ZERO_SHA="0000000000000000000000000000000000000000"
+          if [ -z "$FROM" ] || [ "$FROM" = "$ZERO_SHA" ]; then
+            git log -1 --format=%B "$TO" | npx --no-install commitlint --config commitlint.config.mjs
+          else
+            npx --no-install commitlint --config commitlint.config.mjs --from "$FROM" --to "$TO" --verbose
+          fi
       - run: npm run lint
       - run: npm test -- --run
       - run: npm run build
@@ -41,9 +46,13 @@ jobs:
           node-version: 22.22.3
           registry-url: https://registry.npmjs.org
       - run: npm ci
+      - name: Verify npm authentication
+        run: npm whoami --registry=https://registry.npmjs.org/
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create release and publish package
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx --yes --package semantic-release@25 --package @semantic-release/changelog@6 --package @semantic-release/git@10 --package conventional-changelog-conventionalcommits@9 semantic-release
+        run: npx --no-install semantic-release

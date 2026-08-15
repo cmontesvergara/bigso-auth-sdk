@@ -308,6 +308,40 @@ function createSsoAuthRouter(options) {
       res.status(401).json({ error: error.message || "Failed to refresh tokens" });
     }
   });
+  router.post("/tenant-context", async (req, res) => {
+    const accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
+    const tenantId = typeof req.body?.tenantId === "string" ? req.body.tenantId : "";
+    if (!accessToken || !tenantId || !options.cookieConfig) {
+      res.status(400).json({ error: "invalid_tenant_switch_request" });
+      return;
+    }
+    const verifier = (0, import_node_crypto.randomBytes)(32).toString("base64url");
+    const challenge = (0, import_node_crypto.createHash)("sha256").update(verifier).digest("base64url");
+    try {
+      const authorization = await options.ssoClient.authorizeTenant({
+        accessToken,
+        tenantId,
+        redirectUri: options.tenantSwitchRedirectUri ?? `${options.frontendUrl.replace(/\/$/, "")}/launch`,
+        codeChallenge: challenge,
+        state: (0, import_node_crypto.randomUUID)()
+      });
+      const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
+      const cookie = options.cookieConfig;
+      const base = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain };
+      res.cookie(cookie.sessionName, session.tokens.jti, { ...base, path: cookie.sessionPath });
+      res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
+      res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
+      delete session.tokens.refreshToken;
+      res.status(200).json(session);
+    } catch (error) {
+      const cookie = options.cookieConfig;
+      for (const [name, path] of [[cookie.sessionName, cookie.sessionPath], [cookie.refreshName, cookie.refreshPath], [cookie.permissionName, cookie.permissionPath]]) {
+        res.clearCookie(name, { domain: cookie.domain, path });
+      }
+      logger2.warn("Tenant session replacement failed", { message: error.message });
+      res.status(401).json({ error: "tenant_switch_failed" });
+    }
+  });
   router.post("/logout", async (req, res) => {
     const accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
     const scope = req.body?.scope ?? (req.body?.revokeAll ? "global" : "application");

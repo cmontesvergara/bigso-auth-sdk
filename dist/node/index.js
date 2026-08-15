@@ -88,6 +88,24 @@ var BigsoSsoClient = class {
       credentials: "include"
     }, "exchangeCode");
   }
+  async authorizeTenant(input) {
+    return await this.performFetch(this.authUrl("authorize"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${input.accessToken}`
+      },
+      body: JSON.stringify({
+        tenantId: input.tenantId,
+        appId: this.appId,
+        redirectUri: input.redirectUri,
+        codeChallenge: input.codeChallenge,
+        codeChallengeMethod: "S256",
+        state: input.state
+      }),
+      credentials: "include"
+    }, "authorizeTenant");
+  }
   async refreshTokens(refreshToken, tenantId) {
     console.log("TENANT EN refreshTokens:", tenantId);
     const headers = { "Content-Type": "application/json" };

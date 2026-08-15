@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { BigsoSsoClient } from '../../node/SsoClient';
 import type { V2ExchangeResponse } from '../../types';
 import { SdkLogger } from '../../utils/logger';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const logger = new SdkLogger('AuthSDK');
 
@@ -38,6 +38,8 @@ export interface CreateSsoAuthRouterOptions {
     identityLogoutUrl?: string;
     /** Exactly registered application receiver. Defaults to `${frontendUrl}/launch`. */
     logoutReturnUri?: string;
+    /** Registered redirect used for application-local tenant session replacement. */
+    tenantSwitchRedirectUri?: string;
     /**
      * Configuración de cookies personalizadas.
      * Si se proporciona, el router usará esta cookie en lugar de extraer
@@ -272,6 +274,44 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         }
     });
 
+    router.post('/tenant-context', async (req: import('express').Request, res: import('express').Response) => {
+        const accessToken = req.headers.authorization?.startsWith('Bearer ')
+            ? req.headers.authorization.substring(7)
+            : '';
+        const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
+        if (!accessToken || !tenantId || !options.cookieConfig) {
+            res.status(400).json({ error: 'invalid_tenant_switch_request' });
+            return;
+        }
+
+        const verifier = randomBytes(32).toString('base64url');
+        const challenge = createHash('sha256').update(verifier).digest('base64url');
+        try {
+            const authorization = await options.ssoClient.authorizeTenant({
+                accessToken,
+                tenantId,
+                redirectUri: options.tenantSwitchRedirectUri ?? `${options.frontendUrl.replace(/\/$/, '')}/launch`,
+                codeChallenge: challenge,
+                state: randomUUID(),
+            });
+            const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
+            const cookie = options.cookieConfig;
+            const base = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain } as const;
+            res.cookie(cookie.sessionName, session.tokens.jti, { ...base, path: cookie.sessionPath });
+            res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
+            res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
+            delete (session as any).tokens.refreshToken;
+            res.status(200).json(session);
+        } catch (error: any) {
+            const cookie = options.cookieConfig;
+            for (const [name, path] of [[cookie.sessionName, cookie.sessionPath], [cookie.refreshName, cookie.refreshPath], [cookie.permissionName, cookie.permissionPath]] as const) {
+                res.clearCookie(name, { domain: cookie.domain, path });
+            }
+            logger.warn('Tenant session replacement failed', { message: error.message });
+            res.status(401).json({ error: 'tenant_switch_failed' });
+        }
+    });
+
     router.post('/logout', async (req: import('express').Request, res: import('express').Response) => {
         const accessToken = req.headers.authorization?.startsWith('Bearer ')
             ? req.headers.authorization.substring(7)
@@ -346,6 +386,5 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
     return router;
 }
-
 
 
