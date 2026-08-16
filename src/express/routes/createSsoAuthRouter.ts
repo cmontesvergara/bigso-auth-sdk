@@ -7,7 +7,6 @@ import { projectPublicAuthResponse } from '../publicAuthResponse';
 import {
     buildSessionCookieOptions,
     clearLegacyCookies,
-    hostOnlySessionName,
     isHostOnlyConfig,
     resolveSessionCookieNames,
     type EffectiveCookieConfig,
@@ -116,7 +115,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         return undefined;
     }
 
-    function setHostOnlySessionCookie(res: import('express').Response, sessionHandle: string, maxAge: number): void {
+    function setHostOnlySessionCookie(res: import('express').Response, sessionHandle: string): void {
         if (!effectiveCookieConfig || !isHostOnlyConfig(effectiveCookieConfig)) return;
         const { name, options } = buildSessionCookieOptions(effectiveCookieConfig);
         res.cookie(name, sessionHandle, options);
@@ -166,7 +165,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             if (effectiveCookieConfig && opaqueSessionHandle) {
                 if (isHostOnlyConfig(effectiveCookieConfig)) {
                     logger.info('Establishing host-only application session cookie');
-                    setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+                    setHostOnlySessionCookie(res, opaqueSessionHandle);
                     clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
                 } else {
                     logger.info('Establishing legacy application session cookies');
@@ -429,7 +428,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const opaqueSessionHandle = session.sessionId ?? session.tokens.jti;
 
             if (isHostOnlyConfig(effectiveCookieConfig) && opaqueSessionHandle) {
-                setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+                setHostOnlySessionCookie(res, opaqueSessionHandle);
                 clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
             } else {
                 const cookie = effectiveCookieConfig;
