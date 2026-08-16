@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { BigsoSsoClient } from '../../node/SsoClient';
 import type { SsoJwtTenant, SsoTokenPayload } from '../../types';
 import { SdkLogger } from '../../utils/logger';
+import { resolveSessionCookieNames, type EffectiveCookieConfig } from '../cookies/hostOnlyCookies';
 
 const logger = new SdkLogger('AuthSDK');
 
@@ -14,10 +15,13 @@ export interface SsoAuthMiddlewareOptions {
      *
      * Si se proporciona, el middleware lee la cookie `sessionName`,
      * resuelve la sesión via SSO y extrae el accessToken.
+     *
+     * Accepts a plain legacy sessionName for backward compatibility, or a full
+     * EffectiveCookieConfig to support the host-only profile during migration.
      */
-    cookieConfig?: {
-        sessionName: string;
-    };
+    cookieConfig?:
+        | { sessionName: string }
+        | EffectiveCookieConfig;
 }
 
 declare global {
@@ -44,8 +48,15 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
             // Fallback: cookie de sesión (window.open, navegación directa)
             // El browser envía cookies pero no headers custom.
             // La cookie contiene el jti (session ID), no el access token.
-            if (!accessToken && options.cookieConfig?.sessionName && req.cookies) {
-                const sessionId = req.cookies[options.cookieConfig.sessionName] as string | undefined;
+            if (!accessToken && options.cookieConfig && req.cookies) {
+                const sessionNames = 'sessionName' in options.cookieConfig
+                    ? [options.cookieConfig.sessionName]
+                    : resolveSessionCookieNames(options.cookieConfig);
+
+                const sessionId = sessionNames
+                    .map((name) => req.cookies[name] as string | undefined)
+                    .find(Boolean);
+
                 if (sessionId) {
                     logger.info('Resolving authentication from application session');
                     const ssoClientOptions = options.ssoClient.getClientOptions();

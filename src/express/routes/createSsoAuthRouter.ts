@@ -4,6 +4,15 @@ import type { V2ExchangeResponse } from '../../types';
 import { SdkLogger } from '../../utils/logger';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { projectPublicAuthResponse } from '../publicAuthResponse';
+import {
+    buildSessionCookieOptions,
+    clearLegacyCookies,
+    hostOnlySessionName,
+    isHostOnlyConfig,
+    resolveSessionCookieNames,
+    type EffectiveCookieConfig,
+} from '../cookies/hostOnlyCookies';
+import { generateCsrfSecret, generateCsrfToken } from '../middlewares/csrfGuard';
 
 const logger = new SdkLogger('AuthSDK');
 
@@ -27,7 +36,15 @@ export interface CookieConfig {
     permissionPath: string;
     sameSite: 'strict' | 'lax' | 'none';
     maxAge: number;
+    /**
+     * When using the host-only profile, list every legacy cookie name (and optional domain)
+     * that should be explicitly expired during migration. The router will clear both the
+     * parent-domain variant (if domain is provided) and the host-only variant (no domain).
+     */
+    legacyCookies?: { name: string; domain?: string; path?: string }[];
 }
+
+export type CookieConfigWithOptionalSameSite = Omit<CookieConfig, 'sameSite'> & { sameSite?: CookieConfig['sameSite'] };
 
 export interface CreateSsoAuthRouterOptions {
     ssoClient: BigsoSsoClient;
@@ -47,6 +64,17 @@ export interface CreateSsoAuthRouterOptions {
      * Esto permite que apps satélite tengan su propia cookie de refresh token.
      */
     cookieConfig?: CookieConfig;
+    /**
+     * When true, the router rotates to the host-only `__Host-Http-bigso-session-*`
+     * cookie profile and emits the corresponding CSRF token in public responses.
+     * The legacy cookie names listed in {@link CookieConfig.legacyCookies} (when using
+     * the host-only profile) are cleared on every exchange/refresh/tenant-context and logout.
+     */
+    hostOnlyCookies?: boolean;
+    /** Application slug used to derive the host-only cookie name. Required when hostOnlyCookies is true. */
+    appSlug?: string;
+    /** Server-only secret used to derive session-bound CSRF tokens. If omitted, a random secret is generated at startup. */
+    csrfSecret?: string;
 }
 
 
@@ -58,6 +86,56 @@ function serializePermissions(permissions: any[]): string {
 
 export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router {
     const router = Router();
+
+    if (options.hostOnlyCookies && !options.appSlug) {
+        throw new Error('appSlug is required when hostOnlyCookies is enabled');
+    }
+
+    const effectiveCookieConfig: EffectiveCookieConfig | undefined = options.cookieConfig
+        ? options.hostOnlyCookies && options.appSlug
+            ? { ...options.cookieConfig, hostOnly: true, appSlug: options.appSlug }
+            : options.cookieConfig
+        : undefined;
+
+    const sessionCookieNames = effectiveCookieConfig
+        ? resolveSessionCookieNames(effectiveCookieConfig)
+        : [];
+
+    const csrfSecret = options.csrfSecret ?? generateCsrfSecret();
+
+    function deriveCsrfToken(sessionHandle: string): string {
+        return generateCsrfToken(sessionHandle, csrfSecret);
+    }
+
+    function getSessionHandleFromCookies(req: import('express').Request): string | undefined {
+        if (!effectiveCookieConfig || !req.cookies) return undefined;
+        for (const name of sessionCookieNames) {
+            const value = req.cookies[name] as string | undefined;
+            if (value) return value;
+        }
+        return undefined;
+    }
+
+    function setHostOnlySessionCookie(res: import('express').Response, sessionHandle: string, maxAge: number): void {
+        if (!effectiveCookieConfig || !isHostOnlyConfig(effectiveCookieConfig)) return;
+        const { name, options } = buildSessionCookieOptions(effectiveCookieConfig);
+        res.cookie(name, sessionHandle, options);
+    }
+
+    function clearAuthCookies(res: import('express').Response): void {
+        if (!effectiveCookieConfig) return;
+
+        if (isHostOnlyConfig(effectiveCookieConfig)) {
+            const { name, options } = buildSessionCookieOptions(effectiveCookieConfig);
+            res.clearCookie(name, { path: options.path });
+            clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
+        } else {
+            const cookieConfig = effectiveCookieConfig;
+            res.clearCookie(cookieConfig.sessionName, { domain: cookieConfig.domain, path: cookieConfig.sessionPath });
+            res.clearCookie(cookieConfig.refreshName, { domain: cookieConfig.domain, path: cookieConfig.refreshPath });
+            res.clearCookie(cookieConfig.permissionName, { domain: cookieConfig.domain, path: cookieConfig.permissionPath });
+        }
+    }
 
     router.post('/exchange', async (req: import('express').Request, res: import('express').Response) => {
 
@@ -83,44 +161,54 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
             const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
 
-            // Si hay cookieConfig personalizada, establecer cookie propia de la app
-            if (options.cookieConfig) {
-                logger.info('Establishing application session cookies');
+            const opaqueSessionHandle = ssoResponse.sessionId ?? ssoResponse.tokens.jti;
 
-                const cookieConfig = options.cookieConfig;
+            if (effectiveCookieConfig && opaqueSessionHandle) {
+                if (isHostOnlyConfig(effectiveCookieConfig)) {
+                    logger.info('Establishing host-only application session cookie');
+                    setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+                    clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
+                } else {
+                    logger.info('Establishing legacy application session cookies');
+                    const cookieConfig = effectiveCookieConfig;
+                    res.cookie(cookieConfig.sessionName, opaqueSessionHandle, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: cookieConfig.sameSite,
+                        path: cookieConfig.sessionPath,
+                        maxAge: cookieConfig.maxAge,
+                        domain: cookieConfig.domain
+                    });
 
-                res.cookie(cookieConfig.sessionName, ssoResponse.sessionId ?? ssoResponse.tokens.jti, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: cookieConfig.sameSite,
-                    path: cookieConfig.sessionPath,
-                    maxAge: cookieConfig.maxAge,
-                    domain: cookieConfig.domain
-                });
+                    res.cookie(cookieConfig.refreshName, ssoResponse.tokens.refreshToken, {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: cookieConfig.sameSite,
+                        path: cookieConfig.refreshPath,
+                        maxAge: cookieConfig.maxAge,
+                        domain: cookieConfig.domain
+                    });
 
-                res.cookie(cookieConfig.refreshName, ssoResponse.tokens.refreshToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: cookieConfig.sameSite,
-                    path: cookieConfig.refreshPath,
-                    maxAge: cookieConfig.maxAge,
-                    domain: cookieConfig.domain
-                });
-
-                res.cookie(cookieConfig.permissionName, serializePermissions(ssoResponse.currentTenant.permissions), {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: cookieConfig.sameSite,
-                    path: cookieConfig.permissionPath,
-                    maxAge: cookieConfig.maxAge,
-                    domain: cookieConfig.domain
-                });
+                    res.cookie(cookieConfig.permissionName, serializePermissions(ssoResponse.currentTenant.permissions), {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: cookieConfig.sameSite,
+                        path: cookieConfig.permissionPath,
+                        maxAge: cookieConfig.maxAge,
+                        domain: cookieConfig.domain
+                    });
+                }
             }
 
             if (options.onLoginSuccess) {
                 await options.onLoginSuccess(ssoResponse);
             }
-            res.json(projectPublicAuthResponse(ssoResponse));
+            res.json(projectPublicAuthResponse({
+                ...ssoResponse,
+                ...(effectiveCookieConfig && isHostOnlyConfig(effectiveCookieConfig) && opaqueSessionHandle
+                    ? { csrfToken: deriveCsrfToken(opaqueSessionHandle) }
+                    : {}),
+            }));
         } catch (error: any) {
             logger.error('Authentication exchange failed', { errorType: error?.name ?? 'UnknownError' });
             res.status(401).json({ error: 'exchange_failed' });
@@ -131,17 +219,45 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
-        if (options.cookieConfig) {
+        if (effectiveCookieConfig) {
             logger.info('Resolving application session');
-            const cookieConfig = options.cookieConfig;
-            const sessionId = req.cookies[cookieConfig.sessionName] as string
+            const sessionHandle = getSessionHandleFromCookies(req);
+            if (!sessionHandle) {
+                res.status(401).json({ error: 'session_required' });
+                return;
+            }
             const ssoclientOptions = options.ssoClient.getClientOptions();
-            const ssoSession = await options.ssoClient.session(sessionId, ssoclientOptions.appId);
-            res.json(projectPublicAuthResponse({ success: true, ...ssoSession }));
+            const ssoSession = await options.ssoClient.session(sessionHandle, ssoclientOptions.appId);
+            res.json(projectPublicAuthResponse({
+                success: true,
+                ...ssoSession,
+                ...(isHostOnlyConfig(effectiveCookieConfig)
+                    ? { csrfToken: deriveCsrfToken(sessionHandle) }
+                    : {}),
+            }));
         }
     });
 
     router.post('/refresh', async (req: import('express').Request, res: import('express').Response) => {
+        // In the host-only profile the browser no longer stores a refresh cookie. The BFF
+        // performs server-side refresh, so this route is a no-op that returns the public session.
+        if (effectiveCookieConfig && isHostOnlyConfig(effectiveCookieConfig)) {
+            logger.info('Host-only refresh route invoked');
+            const sessionHandle = getSessionHandleFromCookies(req);
+            if (!sessionHandle) {
+                res.status(401).json({ error: 'session_required' });
+                return;
+            }
+            const ssoclientOptions = options.ssoClient.getClientOptions();
+            const ssoSession = await options.ssoClient.session(sessionHandle, ssoclientOptions.appId);
+            res.json(projectPublicAuthResponse({
+                success: true,
+                ...ssoSession,
+                csrfToken: deriveCsrfToken(sessionHandle),
+            }));
+            return;
+        }
+
         const cookieConfig = options.cookieConfig;
         const refreshName = cookieConfig?.refreshName;
         const incomingToken = req.cookies?.[refreshName as string];
@@ -278,7 +394,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             ? req.headers.authorization.substring(7)
             : '';
         const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : '';
-        if (!tenantId || !options.cookieConfig) {
+        if (!tenantId || !effectiveCookieConfig) {
             res.status(400).json({ error: 'invalid_tenant_switch_request' });
             return;
         }
@@ -287,13 +403,13 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         const challenge = createHash('sha256').update(verifier).digest('base64url');
         try {
             if (!accessToken) {
-                const sessionId = req.cookies?.[options.cookieConfig.sessionName];
-                if (!sessionId) {
+                const sessionHandle = getSessionHandleFromCookies(req);
+                if (!sessionHandle) {
                     res.status(401).json({ error: 'tenant_switch_session_required' });
                     return;
                 }
                 const current = await options.ssoClient.session(
-                    sessionId,
+                    sessionHandle,
                     options.ssoClient.getClientOptions().appId,
                 );
                 accessToken = current?.tokens?.accessToken ?? current?.accessToken ?? '';
@@ -310,18 +426,28 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 state: randomUUID(),
             });
             const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
-            const cookie = options.cookieConfig;
-            const base = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain } as const;
-            res.cookie(cookie.sessionName, session.sessionId ?? session.tokens.jti, { ...base, path: cookie.sessionPath });
-            res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
-            res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
-            if (options.onLoginSuccess) await options.onLoginSuccess(session);
-            res.status(200).json(projectPublicAuthResponse(session));
-        } catch (error: any) {
-            const cookie = options.cookieConfig;
-            for (const [name, path] of [[cookie.sessionName, cookie.sessionPath], [cookie.refreshName, cookie.refreshPath], [cookie.permissionName, cookie.permissionPath]] as const) {
-                res.clearCookie(name, { domain: cookie.domain, path });
+            const opaqueSessionHandle = session.sessionId ?? session.tokens.jti;
+
+            if (isHostOnlyConfig(effectiveCookieConfig) && opaqueSessionHandle) {
+                setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+                clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
+            } else {
+                const cookie = effectiveCookieConfig;
+                const base = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain } as const;
+                res.cookie(cookie.sessionName, opaqueSessionHandle, { ...base, path: cookie.sessionPath });
+                res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
+                res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
             }
+
+            if (options.onLoginSuccess) await options.onLoginSuccess(session);
+            res.status(200).json(projectPublicAuthResponse({
+                ...session,
+                ...(isHostOnlyConfig(effectiveCookieConfig) && opaqueSessionHandle
+                    ? { csrfToken: deriveCsrfToken(opaqueSessionHandle) }
+                    : {}),
+            }));
+        } catch (error: any) {
+            clearAuthCookies(res);
             logger.warn('Tenant session replacement failed', { errorType: error?.name ?? 'UnknownError' });
             res.status(401).json({ error: 'tenant_switch_failed' });
         }
@@ -340,11 +466,11 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
         let revocationSucceeded = true;
         try {
-            if (!accessToken && options.cookieConfig) {
-                const sessionId = req.cookies?.[options.cookieConfig.sessionName];
-                if (sessionId) {
+            if (!accessToken && effectiveCookieConfig) {
+                const sessionHandle = getSessionHandleFromCookies(req);
+                if (sessionHandle) {
                     const current = await options.ssoClient.session(
-                        sessionId,
+                        sessionHandle,
                         options.ssoClient.getClientOptions().appId,
                     );
                     accessToken = current?.tokens?.accessToken ?? current?.accessToken ?? '';
@@ -369,16 +495,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             // Continue — always clear cookies and respond regardless of sso-core error
         } finally {
             // Always clear cookies no matter what happened above
-            const cookieConfig = options.cookieConfig;
-            const clearOpts = cookieConfig
-                ? { domain: cookieConfig.domain, path: '/' }
-                : {};
-
-            for (const cookieName of [cookieConfig?.sessionName, cookieConfig?.refreshName, cookieConfig?.permissionName]) {
-                if (cookieName) {
-                    res.clearCookie(cookieName, clearOpts);
-                }
-            }
+            clearAuthCookies(res);
 
             // Always respond so the client doesn't time out
             if (!res.headersSent) {
