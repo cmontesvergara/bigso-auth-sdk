@@ -1,3 +1,9 @@
+## [0.15.1](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.15.0...v0.15.1) (2026-08-16)
+
+### Correcciones
+
+* **auth:** resolve logout token from server session ([c84e85d](https://github.com/cmontesvergara/bigso-auth-sdk/commit/c84e85da8fb071bad9f5a303e3edfc7b69d83dd0))
+
 ## [0.15.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.3...v0.15.0) (2026-08-16)
 
 ### Nuevas funcionalidades
