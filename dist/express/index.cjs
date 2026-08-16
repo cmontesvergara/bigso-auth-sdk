@@ -23,6 +23,7 @@ __export(express_exports, {
   createContextualLaunchRouter: () => createContextualLaunchRouter,
   createSsoAuthRouter: () => createSsoAuthRouter,
   createSsoSyncRouter: () => createSsoSyncRouter,
+  projectPublicAuthResponse: () => projectPublicAuthResponse,
   ssoAuthMiddleware: () => ssoAuthMiddleware,
   ssoSyncGuardMiddleware: () => ssoSyncGuardMiddleware
 });
@@ -35,7 +36,7 @@ var SdkLogger = class {
   }
   format(level, message, meta) {
     const ts = (/* @__PURE__ */ new Date()).toISOString();
-    const metaStr = meta ? " | " + JSON.stringify(meta) : "";
+    const metaStr = meta ? " | " + JSON.stringify(redact(meta)) : "";
     return `[${ts}] [${level}] [${this.context}] ${message}${metaStr}`;
   }
   info(message, meta) {
@@ -48,6 +49,22 @@ var SdkLogger = class {
     console.error(this.format("ERROR", message, meta));
   }
 };
+var sensitiveKey = /(authorization|cookie|password|secret|token|payload|hash|verifier|challenge)/i;
+var jwtValue = /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+var bearerValue = /Bearer\s+[^\s,;]+/gi;
+function redact(value, key) {
+  if (key && sensitiveKey.test(key)) return "[REDACTED]";
+  if (typeof value === "string") {
+    return value.replace(jwtValue, "[REDACTED]").replace(bearerValue, "Bearer [REDACTED]");
+  }
+  if (Array.isArray(value)) return value.map((item) => redact(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([nestedKey, nestedValue]) => [nestedKey, redact(nestedValue, nestedKey)])
+    );
+  }
+  return value;
+}
 
 // src/express/middlewares/ssoAuth.ts
 var logger = new SdkLogger("AuthSDK");
@@ -62,9 +79,7 @@ function ssoAuthMiddleware(options) {
       if (!accessToken && options.cookieConfig?.sessionName && req.cookies) {
         const sessionId = req.cookies[options.cookieConfig.sessionName];
         if (sessionId) {
-          logger.info("No Bearer header, falling back to session cookie", {
-            sessionName: options.cookieConfig.sessionName
-          });
+          logger.info("Resolving authentication from application session");
           const ssoClientOptions = options.ssoClient.getClientOptions();
           const session = await options.ssoClient.session(sessionId, ssoClientOptions.appId);
           accessToken = session?.tokens?.accessToken;
@@ -82,7 +97,9 @@ function ssoAuthMiddleware(options) {
       req.tokenPayload = payload;
       next();
     } catch (error) {
-      logger.error("Authentication Middleware Error", { message: error instanceof Error ? error.message : String(error) });
+      logger.error("Authentication middleware failed", {
+        errorType: error instanceof Error ? error.name : "UnknownError"
+      });
       res.status(401).json({ error: "Authentication failed" });
     }
   };
@@ -111,13 +128,15 @@ function ssoSyncGuardMiddleware(options) {
       const cleanClientIp = clientIp.replace(/^.*:/, "");
       const isPrivateIp = cleanClientIp.startsWith("10.") || cleanClientIp.startsWith("192.168.") || cleanClientIp.startsWith("172.") && parseInt(cleanClientIp.split(".")[1], 10) >= 16 && parseInt(cleanClientIp.split(".")[1], 10) <= 31;
       if (!ssoIps.includes(cleanClientIp) && !isPrivateIp) {
-        console.warn(`\u26D4\uFE0F [BigsoAuthSDK] Blocked sync request from unauthorized IP: ${clientIp}`);
+        console.warn("[BigsoAuthSDK] Blocked sync request from unauthorized origin");
         res.status(403).json({ error: "Unauthorized origin" });
         return;
       }
       next();
     } catch (error) {
-      console.error("\u274C [BigsoAuthSDK] Sync Guard Validation Error:", error instanceof Error ? error.message : error);
+      console.error("[BigsoAuthSDK] Sync guard validation failed", {
+        errorType: error instanceof Error ? error.name : "UnknownError"
+      });
       res.status(500).json({ error: "Security validation failed" });
     }
   };
@@ -126,10 +145,83 @@ function ssoSyncGuardMiddleware(options) {
 // src/express/routes/createSsoAuthRouter.ts
 var import_express = require("express");
 var import_node_crypto = require("crypto");
+
+// src/express/publicAuthResponse.ts
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function stringValue(record, key) {
+  return typeof record[key] === "string" ? record[key] : void 0;
+}
+function projectUser(value) {
+  if (!isRecord(value)) return void 0;
+  const userId = stringValue(value, "userId") ?? stringValue(value, "id");
+  const email = stringValue(value, "email");
+  if (!userId || !email) return void 0;
+  return {
+    userId,
+    email,
+    firstName: stringValue(value, "firstName") ?? "",
+    lastName: stringValue(value, "lastName") ?? ""
+  };
+}
+function projectPermissions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((permission) => {
+    if (!isRecord(permission)) return [];
+    const resource = stringValue(permission, "resource");
+    const action = stringValue(permission, "action");
+    return resource && action ? [{ resource, action }] : [];
+  });
+}
+function projectTenant(value) {
+  if (!isRecord(value)) return void 0;
+  const id = stringValue(value, "id");
+  if (!id) return void 0;
+  return {
+    id,
+    name: stringValue(value, "name") ?? "",
+    slug: stringValue(value, "slug") ?? "",
+    role: stringValue(value, "role") ?? "",
+    permissions: projectPermissions(value.permissions)
+  };
+}
+function projectApplication(value) {
+  if (!isRecord(value)) return void 0;
+  const appId = stringValue(value, "appId");
+  const name = stringValue(value, "name");
+  if (!appId || !name) return void 0;
+  return {
+    appId,
+    name,
+    logoUrl: stringValue(value, "logoUrl") ?? null
+  };
+}
+function projectPublicAuthResponse(value) {
+  const input = isRecord(value) ? value : {};
+  const tokens = isRecord(input.tokens) ? input.tokens : {};
+  const expiresIn = typeof tokens.expiresIn === "number" ? tokens.expiresIn : typeof input.expiresIn === "number" ? input.expiresIn : void 0;
+  const user = projectUser(input.user);
+  const currentTenant = projectTenant(input.currentTenant);
+  const relatedTenants = Array.isArray(input.relatedTenants) ? input.relatedTenants.flatMap((tenant) => projectTenant(tenant) ?? []) : void 0;
+  const activeApplications = Array.isArray(input.activeApplications) ? input.activeApplications.flatMap((application) => projectApplication(application) ?? []) : void 0;
+  const csrfToken = stringValue(input, "csrfToken");
+  return {
+    success: input.success !== false,
+    ...expiresIn === void 0 ? {} : { expiresIn },
+    ...user ? { user } : {},
+    ...currentTenant ? { currentTenant } : {},
+    ...relatedTenants ? { relatedTenants } : {},
+    ...activeApplications ? { activeApplications } : {},
+    ...csrfToken ? { csrfToken } : {}
+  };
+}
+
+// src/express/routes/createSsoAuthRouter.ts
 var logger2 = new SdkLogger("AuthSDK");
 var activeRefreshes = /* @__PURE__ */ new Map();
 function getRefreshKey(token) {
-  return token.substring(0, 20);
+  return (0, import_node_crypto.createHash)("sha256").update(token).digest("base64url");
 }
 function serializePermissions(permissions) {
   return permissions.map((p) => `${p.resource}:${p.action}`).join(",");
@@ -137,7 +229,7 @@ function serializePermissions(permissions) {
 function createSsoAuthRouter(options) {
   const router = (0, import_express.Router)();
   router.post("/exchange", async (req, res) => {
-    logger2.info("Received /exchange-v2 request", { body: req.body });
+    logger2.info("Received authentication exchange request");
     try {
       const { payload, codeVerifier: codeVerifierFromBody } = req.body;
       if (!payload) {
@@ -156,9 +248,9 @@ function createSsoAuthRouter(options) {
       }
       const ssoResponse = await options.ssoClient.exchangeCode(verified.code, verifier);
       if (options.cookieConfig) {
-        logger2.info("Setting refresh token cookie with custom config", { config: options.cookieConfig });
+        logger2.info("Establishing application session cookies");
         const cookieConfig = options.cookieConfig;
-        res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
+        res.cookie(cookieConfig.sessionName, ssoResponse.sessionId ?? ssoResponse.tokens.jti, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: cookieConfig.sameSite,
@@ -186,11 +278,10 @@ function createSsoAuthRouter(options) {
       if (options.onLoginSuccess) {
         await options.onLoginSuccess(ssoResponse);
       }
-      delete ssoResponse.tokens.refreshToken;
-      res.json(ssoResponse);
+      res.json(projectPublicAuthResponse(ssoResponse));
     } catch (error) {
-      logger2.error("Error exchanging v2 payload", { message: error.message });
-      res.status(401).json({ error: error.message || "Failed to verify signed payload" });
+      logger2.error("Authentication exchange failed", { errorType: error?.name ?? "UnknownError" });
+      res.status(401).json({ error: "exchange_failed" });
     }
   });
   router.get("/session", async (req, res) => {
@@ -198,26 +289,20 @@ function createSsoAuthRouter(options) {
     res.set("Pragma", "no-cache");
     res.set("Expires", "0");
     if (options.cookieConfig) {
-      logger2.info("Session request", { config: options.cookieConfig });
+      logger2.info("Resolving application session");
       const cookieConfig = options.cookieConfig;
       const sessionId = req.cookies[cookieConfig.sessionName];
       const ssoclientOptions = options.ssoClient.getClientOptions();
       const ssoSession = await options.ssoClient.session(sessionId, ssoclientOptions.appId);
-      res.json({
-        success: true,
-        ...ssoSession
-      });
+      res.json(projectPublicAuthResponse({ success: true, ...ssoSession }));
     }
   });
   router.post("/refresh", async (req, res) => {
     const cookieConfig = options.cookieConfig;
     const refreshName = cookieConfig?.refreshName;
     const incomingToken = req.cookies?.[refreshName];
-    logger2.info("Received /refresh request", {
-      refreshName,
-      hasCookie: !!incomingToken,
-      tokenPrefix: incomingToken ? incomingToken.substring(0, 20) : null,
-      tenantId: req.headers["x-tenant-id"]
+    logger2.info("Received refresh request", {
+      hasSessionCredential: !!incomingToken
     });
     const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
     const cookiePath = cookieConfig?.refreshPath;
@@ -225,21 +310,19 @@ function createSsoAuthRouter(options) {
     try {
       const refreshToken = req.cookies?.[cookieConfig?.refreshName];
       if (!refreshToken) {
-        logger2.warn("No refresh token in cookies", { refreshName });
+        logger2.warn("No refresh credential available");
         res.status(401).json({ error: "No refresh token available" });
         return;
       }
-      let tenantId = req.headers["x-tenant-id"]?.toString() || void 0;
-      if (!tenantId) {
-        try {
-          const payload = JSON.parse(Buffer.from(refreshToken.split(".")[1], "base64").toString());
-          tenantId = payload["https://bigso.org/tenant_id"] || payload["https://bigso.co/tenant_id"] || payload.tenantId || "";
-          if (tenantId) {
-            logger2.info("Recovered tenantId from refresh token JWT", { tenantId });
-          }
-        } catch (e) {
-          logger2.warn("Could not parse tenantId from refresh token", { error: e.message });
+      let tenantId;
+      try {
+        const payload = JSON.parse(Buffer.from(refreshToken.split(".")[1], "base64").toString());
+        tenantId = payload["https://bigso.org/tenant_id"] || payload["https://bigso.co/tenant_id"] || payload.tenantId || "";
+        if (tenantId) {
+          logger2.info("Recovered tenant context from refresh credential");
         }
+      } catch {
+        logger2.warn("Could not resolve tenant context from refresh credential");
       }
       logger2.info("Forwarding refresh to IDP", { tenantId: tenantId || "(empty)" });
       const refreshKey = getRefreshKey(refreshToken);
@@ -255,10 +338,22 @@ function createSsoAuthRouter(options) {
         }).catch(() => {
         });
       } else {
-        logger2.info("Refresh already in flight, waiting for result", { refreshKey });
+        logger2.info("Refresh already in flight, waiting for result");
       }
       const ssoResponse = await refreshPromise;
       const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1e3;
+      const opaqueSessionHandle = ssoResponse.sessionId ?? ssoResponse.tokens?.jti;
+      if (cookieConfig && opaqueSessionHandle) {
+        res.cookie(cookieConfig.sessionName, opaqueSessionHandle, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: cookieSameSite,
+          path: cookieConfig.sessionPath,
+          maxAge,
+          domain: cookieDomain
+        });
+        logger2.info("Session cookie rotated after refresh");
+      }
       if (ssoResponse.tokens?.refreshToken) {
         const newToken = ssoResponse.tokens.refreshToken;
         res.cookie(cookieConfig?.refreshName, newToken, {
@@ -269,11 +364,7 @@ function createSsoAuthRouter(options) {
           maxAge,
           domain: cookieDomain
         });
-        logger2.info("Cookie updated after refresh", {
-          refreshName,
-          oldTokenPrefix: refreshToken.substring(0, 20),
-          newTokenPrefix: newToken.substring(0, 20)
-        });
+        logger2.info("Refresh credential cookie rotated");
       } else {
         logger2.warn("No refresh token received in refresh response, not setting cookie");
       }
@@ -291,21 +382,18 @@ function createSsoAuthRouter(options) {
       } else if (cookieConfig) {
         logger2.warn("No permissions received in refresh response \u2014 permissions cookie NOT updated");
       }
-      res.json({
-        success: true,
-        tokens: ssoResponse.tokens
-      });
+      res.json(projectPublicAuthResponse(ssoResponse));
     } catch (error) {
-      logger2.error("Error refreshing tokens", { message: error.message });
-      const isAuthError = error.message?.includes("revoked") || error.message?.includes("expired") || error.message?.includes("Invalid") || error.message?.includes("not recognized") || error.message?.includes("Token not found") || error.message?.includes("reuse detected");
+      logger2.error("Token refresh failed", { errorType: error?.name ?? "UnknownError" });
+      const isAuthError = error?.status === 401 || error?.status === 403 || error.message?.includes("revoked") || error.message?.includes("expired") || error.message?.includes("Invalid") || error.message?.includes("not recognized") || error.message?.includes("Token not found") || error.message?.includes("reuse detected");
       if (isAuthError) {
         res.clearCookie(cookieConfig?.refreshName, {
           path: cookiePath,
           domain: cookieDomain
         });
-        logger2.info("Cleared invalid refresh token cookie", { refreshName, reason: error.message });
+        logger2.info("Cleared invalid refresh credential cookie");
       }
-      res.status(401).json({ error: error.message || "Failed to refresh tokens" });
+      res.status(401).json({ error: "refresh_failed" });
     }
   });
   router.post("/tenant-context", async (req, res) => {
@@ -344,18 +432,17 @@ function createSsoAuthRouter(options) {
       const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
       const cookie = options.cookieConfig;
       const base = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain };
-      res.cookie(cookie.sessionName, session.tokens.jti, { ...base, path: cookie.sessionPath });
+      res.cookie(cookie.sessionName, session.sessionId ?? session.tokens.jti, { ...base, path: cookie.sessionPath });
       res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
       res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
       if (options.onLoginSuccess) await options.onLoginSuccess(session);
-      delete session.tokens.refreshToken;
-      res.status(200).json(session);
+      res.status(200).json(projectPublicAuthResponse(session));
     } catch (error) {
       const cookie = options.cookieConfig;
       for (const [name, path] of [[cookie.sessionName, cookie.sessionPath], [cookie.refreshName, cookie.refreshPath], [cookie.permissionName, cookie.permissionPath]]) {
         res.clearCookie(name, { domain: cookie.domain, path });
       }
-      logger2.warn("Tenant session replacement failed", { message: error.message });
+      logger2.warn("Tenant session replacement failed", { errorType: error?.name ?? "UnknownError" });
       res.status(401).json({ error: "tenant_switch_failed" });
     }
   });
@@ -379,7 +466,7 @@ function createSsoAuthRouter(options) {
       }
     } catch (error) {
       revocationSucceeded = false;
-      logger2.warn("Failed to logout in SSO Backend", { message: error.message });
+      logger2.warn("Failed to logout in SSO Backend", { errorType: error?.name ?? "UnknownError" });
     } finally {
       const cookieConfig = options.cookieConfig;
       const clearOpts = cookieConfig ? { domain: cookieConfig.domain, path: "/" } : {};
@@ -437,8 +524,10 @@ function createSsoSyncRouter(options) {
         }
       });
     } catch (error) {
-      console.error("\u274C [BigsoAuthSDK] Error in sync endpoint:", error.message);
-      res.status(500).json({ error: error.message });
+      console.error("[BigsoAuthSDK] Sync endpoint failed", {
+        errorType: error?.name ?? "UnknownError"
+      });
+      res.status(500).json({ error: "resource_sync_failed" });
     }
   });
   return router;
@@ -476,6 +565,7 @@ function createContextualLaunchRouter(options) {
   createContextualLaunchRouter,
   createSsoAuthRouter,
   createSsoSyncRouter,
+  projectPublicAuthResponse,
   ssoAuthMiddleware,
   ssoSyncGuardMiddleware
 });

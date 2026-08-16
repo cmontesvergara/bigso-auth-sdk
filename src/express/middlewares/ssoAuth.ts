@@ -47,9 +47,7 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
             if (!accessToken && options.cookieConfig?.sessionName && req.cookies) {
                 const sessionId = req.cookies[options.cookieConfig.sessionName] as string | undefined;
                 if (sessionId) {
-                    logger.info('No Bearer header, falling back to session cookie', {
-                        sessionName: options.cookieConfig.sessionName,
-                    });
+                    logger.info('Resolving authentication from application session');
                     const ssoClientOptions = options.ssoClient.getClientOptions();
                     const session = await options.ssoClient.session(sessionId, ssoClientOptions.appId);
                     accessToken = session?.tokens?.accessToken;
@@ -71,7 +69,9 @@ export function ssoAuthMiddleware(options: SsoAuthMiddlewareOptions) {
 
             next();
         } catch (error) {
-            logger.error('Authentication Middleware Error', { message: error instanceof Error ? error.message : String(error) });
+            logger.error('Authentication middleware failed', {
+                errorType: error instanceof Error ? error.name : 'UnknownError',
+            });
             res.status(401).json({ error: 'Authentication failed' });
         }
     };

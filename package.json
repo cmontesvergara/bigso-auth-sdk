@@ -44,7 +44,8 @@
         "dev": "tsup src/browser/index.ts src/node/index.ts src/express/index.ts --watch --out-dir dist",
         "prepublishOnly": "npm run build",
         "lint": "eslint .",
-        "test": "vitest"
+        "test": "vitest",
+        "check:auth-logs": "node scripts/scan-auth-artifacts.mjs test-fixtures/auth-logs/safe.log"
     },
     "dependencies": {
         "jose": "^5.0.0"

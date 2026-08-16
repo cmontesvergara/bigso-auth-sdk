@@ -32,14 +32,15 @@ export class BigsoSsoClient {
     }
 
     private async performFetch(url: string, options: RequestInit, operation: string): Promise<any> {
-        console.log(`[BigsoSsoClient] 🚀 START ${operation} | URL: ${url}`);
+        const endpoint = new URL(url);
+        console.log(`[BigsoSsoClient] START ${operation} | Endpoint: ${endpoint.origin}${endpoint.pathname}`);
         
         try {
             const response = await fetch(url, options);
-            console.log(`[BigsoSsoClient] 📥 END ${operation} | Status: ${response.status} ${response.statusText}`);
+            console.log(`[BigsoSsoClient] END ${operation} | Status: ${response.status}`);
 
             const text = await response.text();
-            console.log(`[BigsoSsoClient] 📄 Response received (${text.length} bytes)`);
+            console.log(`[BigsoSsoClient] Response received (${text.length} bytes)`);
 
             if (!response.ok) {
                 let err: any = {};
@@ -48,12 +49,15 @@ export class BigsoSsoClient {
                 } catch {
                     err = {};
                 }
-                const errorMsg = err.message || `${operation} failed (status: ${response.status})`;
-                console.error(`[BigsoSsoClient] ❌ Error in ${operation}:`, errorMsg, {
+                const errorCode = typeof err.error === 'string' ? err.error : 'upstream_request_failed';
+                console.error(`[BigsoSsoClient] Request failed in ${operation}`, {
                     status: response.status,
-                    error: err.error,
+                    errorCode,
                 });
-                throw new Error(errorMsg);
+                const requestError = new Error(`${operation} failed (status: ${response.status})`);
+                requestError.name = 'SsoRequestError';
+                Object.assign(requestError, { status: response.status, code: errorCode });
+                throw requestError;
             }
 
             if (!text) return null;
@@ -63,7 +67,10 @@ export class BigsoSsoClient {
                 return text;
             }
         } catch (error: any) {
-            console.error(`[BigsoSsoClient] 💥 Fatal Fetch Error in ${operation}:`, error.message);
+            console.error(`[BigsoSsoClient] Fetch failed in ${operation}`, {
+                errorType: error?.name ?? 'UnknownError',
+                status: typeof error?.status === 'number' ? error.status : undefined,
+            });
             throw error;
         }
     }
@@ -158,13 +165,13 @@ export class BigsoSsoClient {
         accessToken: string,
         options: boolean | { scope: 'application' | 'global' } = { scope: 'application' },
     ): Promise<void> {
-        // sso-core requireds sessionId (= jti of the access token) in the body
+        // sid identifies the persistent AppSession; jti is only a legacy fallback.
         let sessionId: string | undefined;
         try {
             const parts = accessToken.split('.');
             if (parts.length === 3) {
                 const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-                sessionId = payload.jti;
+                sessionId = payload.sid || payload.jti;
             }
         } catch {
             // If parsing fails, proceed without sessionId — sso-core will reject but

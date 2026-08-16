@@ -28,6 +28,7 @@ jobs:
           fi
       - run: npm run lint
       - run: npm test -- --run
+      - run: npm run check:auth-logs
       - run: npm run build
       - run: npm audit --omit=dev --omit=optional
 

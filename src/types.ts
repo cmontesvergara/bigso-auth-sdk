@@ -99,6 +99,8 @@ export interface V2LoginResponse {
 
 export interface V2ExchangeResponse {
     success: boolean
+    /** Server-only opaque application-session handle. Never project to browser JSON. */
+    sessionId?: string
     tokens: {
         jti: string
         accessToken: string
@@ -113,6 +115,8 @@ export interface V2ExchangeResponse {
 
 export interface V2RefreshResponse {
     success: boolean
+    /** Server-only opaque application-session handle. Never project to browser JSON. */
+    sessionId?: string
     tokens: {
         jti: string
         accessToken: string

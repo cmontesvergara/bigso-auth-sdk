@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction, Router } from 'express';
 import { BigsoSsoClient } from '../node/index.js';
-import { S as SsoJwtTenant, i as SsoTokenPayload, V as V2ExchangeResponse } from '../types-C6UDdKXL.js';
+import { S as SsoJwtTenant, i as SsoTokenPayload, V as V2ExchangeResponse, j as SsoUser, k as SsoTenant, A as ActiveSessionApplication } from '../types-DPeoi2iF.js';
 
 interface SsoAuthMiddlewareOptions {
     ssoClient: BigsoSsoClient;
@@ -70,6 +70,21 @@ interface CreateSsoAuthRouterOptions {
 }
 declare function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router;
 
+interface PublicAuthResponse {
+    success: boolean;
+    expiresIn?: number;
+    user?: SsoUser;
+    currentTenant?: SsoTenant;
+    relatedTenants?: SsoTenant[];
+    activeApplications?: ActiveSessionApplication[];
+    csrfToken?: string;
+}
+/**
+ * Builds the only authentication/session shape that may cross into browser JavaScript.
+ * Never spread upstream Identity responses here: new internal fields must remain private by default.
+ */
+declare function projectPublicAuthResponse(value: unknown): PublicAuthResponse;
+
 interface SsoSyncRouterOptions {
     resources: any[];
     appId: string;
@@ -84,4 +99,4 @@ interface ContextualLaunchRouterOptions {
 }
 declare function createContextualLaunchRouter(options: ContextualLaunchRouterOptions): Router;
 
-export { type ContextualLaunchRouterOptions, type CookieConfig, type CreateSsoAuthRouterOptions, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createContextualLaunchRouter, createSsoAuthRouter, createSsoSyncRouter, ssoAuthMiddleware, ssoSyncGuardMiddleware };
+export { type ContextualLaunchRouterOptions, type CookieConfig, type CreateSsoAuthRouterOptions, type PublicAuthResponse, type SsoAuthMiddlewareOptions, type SsoSyncGuardOptions, type SsoSyncRouterOptions, createContextualLaunchRouter, createSsoAuthRouter, createSsoSyncRouter, projectPublicAuthResponse, ssoAuthMiddleware, ssoSyncGuardMiddleware };

@@ -6,6 +6,8 @@ export type { SsoSyncGuardOptions } from './middlewares/ssoSyncGuard';
 
 export { createSsoAuthRouter } from './routes/createSsoAuthRouter';
 export type { CreateSsoAuthRouterOptions, CookieConfig } from './routes/createSsoAuthRouter';
+export { projectPublicAuthResponse } from './publicAuthResponse';
+export type { PublicAuthResponse } from './publicAuthResponse';
 
 export { createSsoSyncRouter } from './routes/createSsoSyncRouter';
 export type { SsoSyncRouterOptions } from './routes/createSsoSyncRouter';

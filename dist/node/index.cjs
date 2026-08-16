@@ -67,12 +67,13 @@ var BigsoSsoClient = class {
     return `${this.ssoBackendUrl}${basePath}/${action}`;
   }
   async performFetch(url, options, operation) {
-    console.log(`[BigsoSsoClient] \u{1F680} START ${operation} | URL: ${url}`);
+    const endpoint = new URL(url);
+    console.log(`[BigsoSsoClient] START ${operation} | Endpoint: ${endpoint.origin}${endpoint.pathname}`);
     try {
       const response = await fetch(url, options);
-      console.log(`[BigsoSsoClient] \u{1F4E5} END ${operation} | Status: ${response.status} ${response.statusText}`);
+      console.log(`[BigsoSsoClient] END ${operation} | Status: ${response.status}`);
       const text = await response.text();
-      console.log(`[BigsoSsoClient] \u{1F4C4} Response received (${text.length} bytes)`);
+      console.log(`[BigsoSsoClient] Response received (${text.length} bytes)`);
       if (!response.ok) {
         let err = {};
         try {
@@ -80,12 +81,15 @@ var BigsoSsoClient = class {
         } catch {
           err = {};
         }
-        const errorMsg = err.message || `${operation} failed (status: ${response.status})`;
-        console.error(`[BigsoSsoClient] \u274C Error in ${operation}:`, errorMsg, {
+        const errorCode = typeof err.error === "string" ? err.error : "upstream_request_failed";
+        console.error(`[BigsoSsoClient] Request failed in ${operation}`, {
           status: response.status,
-          error: err.error
+          errorCode
         });
-        throw new Error(errorMsg);
+        const requestError = new Error(`${operation} failed (status: ${response.status})`);
+        requestError.name = "SsoRequestError";
+        Object.assign(requestError, { status: response.status, code: errorCode });
+        throw requestError;
       }
       if (!text) return null;
       try {
@@ -94,7 +98,10 @@ var BigsoSsoClient = class {
         return text;
       }
     } catch (error) {
-      console.error(`[BigsoSsoClient] \u{1F4A5} Fatal Fetch Error in ${operation}:`, error.message);
+      console.error(`[BigsoSsoClient] Fetch failed in ${operation}`, {
+        errorType: error?.name ?? "UnknownError",
+        status: typeof error?.status === "number" ? error.status : void 0
+      });
       throw error;
     }
   }
@@ -170,7 +177,7 @@ var BigsoSsoClient = class {
       const parts = accessToken.split(".");
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
-        sessionId = payload.jti;
+        sessionId = payload.sid || payload.jti;
       }
     } catch {
     }

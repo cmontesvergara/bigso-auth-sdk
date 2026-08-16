@@ -1,0 +1,1 @@
+{"event":"auth_refresh_failed","correlationId":"test-correlation","status":401,"errorType":"SsoRequestError"}

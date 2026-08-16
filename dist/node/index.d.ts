@@ -1,5 +1,5 @@
-import { i as SsoTokenPayload, j as V2LoginResponse, V as V2ExchangeResponse, k as V2AuthorizeResponse, l as V2RefreshResponse } from '../types-C6UDdKXL.js';
-export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-C6UDdKXL.js';
+import { i as SsoTokenPayload, l as V2LoginResponse, V as V2ExchangeResponse, m as V2AuthorizeResponse, n as V2RefreshResponse } from '../types-DPeoi2iF.js';
+export { g as LogoutRequest, L as LogoutResult, h as LogoutScope } from '../types-DPeoi2iF.js';
 
 interface SsoClientOptions {
     ssoBackendUrl: string;

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BigsoSsoClient } from './SsoClient'
 
 const token = `header.${Buffer.from(JSON.stringify({ jti: 'session-one' })).toString('base64url')}.signature`
+const sidToken = `header.${Buffer.from(JSON.stringify({ sid: 'app-session-id', jti: 'jwt-id' })).toString('base64url')}.signature`
 
 describe('BigsoSsoClient logout', () => {
     afterEach(() => {
@@ -30,6 +31,19 @@ describe('BigsoSsoClient logout', () => {
             isGlobal: expectedScope === 'global',
             sessionId: 'session-one',
         })
+    })
+
+    it('revokes the persistent sid instead of the per-JWT jti', async () => {
+        const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+        vi.stubGlobal('fetch', fetcher)
+        const client = new BigsoSsoClient({
+            ssoBackendUrl: 'https://api.bigso.cloud/idp',
+            appId: 'app-one',
+        })
+
+        await client.logout(sidToken, { scope: 'application' })
+
+        expect(JSON.parse(fetcher.mock.calls[0][1].body).sessionId).toBe('app-session-id')
     })
 
     it('never writes refresh or access tokens to logs', async () => {

@@ -46,14 +46,16 @@ export function ssoSyncGuardMiddleware(options: SsoSyncGuardOptions) {
                     parseInt(cleanClientIp.split('.')[1], 10) <= 31);
 
             if (!ssoIps.includes(cleanClientIp) && !isPrivateIp) {
-                console.warn(`⛔️ [BigsoAuthSDK] Blocked sync request from unauthorized IP: ${clientIp}`);
+                console.warn("[BigsoAuthSDK] Blocked sync request from unauthorized origin");
                 res.status(403).json({ error: "Unauthorized origin" });
                 return;
             }
 
             next();
         } catch (error) {
-            console.error("❌ [BigsoAuthSDK] Sync Guard Validation Error:", error instanceof Error ? error.message : error);
+            console.error("[BigsoAuthSDK] Sync guard validation failed", {
+                errorType: error instanceof Error ? error.name : "UnknownError",
+            });
             res.status(500).json({ error: "Security validation failed" });
         }
     };

@@ -30,8 +30,10 @@ export function createSsoSyncRouter(options: SsoSyncRouterOptions): Router {
                 },
             });
         } catch (error: any) {
-            console.error("❌ [BigsoAuthSDK] Error in sync endpoint:", error.message);
-            res.status(500).json({ error: error.message });
+            console.error("[BigsoAuthSDK] Sync endpoint failed", {
+                errorType: error?.name ?? "UnknownError",
+            });
+            res.status(500).json({ error: "resource_sync_failed" });
         }
     });
 

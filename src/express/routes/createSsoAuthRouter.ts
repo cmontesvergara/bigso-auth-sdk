@@ -3,6 +3,7 @@ import { BigsoSsoClient } from '../../node/SsoClient';
 import type { V2ExchangeResponse } from '../../types';
 import { SdkLogger } from '../../utils/logger';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { projectPublicAuthResponse } from '../publicAuthResponse';
 
 const logger = new SdkLogger('AuthSDK');
 
@@ -13,8 +14,7 @@ const logger = new SdkLogger('AuthSDK');
 const activeRefreshes = new Map<string, Promise<any>>();
 
 function getRefreshKey(token: string): string {
-    // Use first 20 chars of token as key (sufficiently unique, no full token in memory)
-    return token.substring(0, 20);
+    return createHash('sha256').update(token).digest('base64url');
 }
 
 export interface CookieConfig {
@@ -61,7 +61,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
     router.post('/exchange', async (req: import('express').Request, res: import('express').Response) => {
 
-        logger.info('Received /exchange-v2 request', { body: req.body });
+        logger.info('Received authentication exchange request');
         try {
             const { payload, codeVerifier: codeVerifierFromBody } = req.body;
             if (!payload) {
@@ -85,11 +85,11 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
             // Si hay cookieConfig personalizada, establecer cookie propia de la app
             if (options.cookieConfig) {
-                logger.info('Setting refresh token cookie with custom config', { config: options.cookieConfig });
+                logger.info('Establishing application session cookies');
 
                 const cookieConfig = options.cookieConfig;
 
-                res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
+                res.cookie(cookieConfig.sessionName, ssoResponse.sessionId ?? ssoResponse.tokens.jti, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: cookieConfig.sameSite,
@@ -120,11 +120,10 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             if (options.onLoginSuccess) {
                 await options.onLoginSuccess(ssoResponse);
             }
-            delete (ssoResponse as any).tokens.refreshToken;
-            res.json(ssoResponse);
+            res.json(projectPublicAuthResponse(ssoResponse));
         } catch (error: any) {
-            logger.error('Error exchanging v2 payload', { message: error.message });
-            res.status(401).json({ error: error.message || 'Failed to verify signed payload' });
+            logger.error('Authentication exchange failed', { errorType: error?.name ?? 'UnknownError' });
+            res.status(401).json({ error: 'exchange_failed' });
         }
     });
 
@@ -133,15 +132,12 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
         if (options.cookieConfig) {
-            logger.info('Session request', { config: options.cookieConfig });
+            logger.info('Resolving application session');
             const cookieConfig = options.cookieConfig;
             const sessionId = req.cookies[cookieConfig.sessionName] as string
             const ssoclientOptions = options.ssoClient.getClientOptions();
             const ssoSession = await options.ssoClient.session(sessionId, ssoclientOptions.appId);
-            res.json({
-                success: true,
-                ...ssoSession
-            });
+            res.json(projectPublicAuthResponse({ success: true, ...ssoSession }));
         }
     });
 
@@ -149,11 +145,8 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         const cookieConfig = options.cookieConfig;
         const refreshName = cookieConfig?.refreshName;
         const incomingToken = req.cookies?.[refreshName as string];
-        logger.info('Received /refresh request', {
-            refreshName,
-            hasCookie: !!incomingToken,
-            tokenPrefix: incomingToken ? incomingToken.substring(0, 20) : null,
-            tenantId: req.headers['x-tenant-id'],
+        logger.info('Received refresh request', {
+            hasSessionCredential: !!incomingToken,
         });
         const cookieDomain = cookieConfig ? cookieConfig.domain : process.env.COOKIE_DOMAIN;
         const cookiePath = cookieConfig?.refreshPath;
@@ -163,23 +156,22 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const refreshToken = req.cookies?.[cookieConfig?.refreshName as string]
 
             if (!refreshToken) {
-                logger.warn('No refresh token in cookies', { refreshName });
+                logger.warn('No refresh credential available');
                 res.status(401).json({ error: 'No refresh token available' });
                 return;
             }
-            let tenantId = req.headers['x-tenant-id']?.toString() || undefined;
+            let tenantId: string | undefined;
 
-            // Fallback: extraer tenantId del refresh token JWT si el header está vacío
-            if (!tenantId) {
-                try {
-                    const payload = JSON.parse(Buffer.from(refreshToken.split('.')[1], 'base64').toString());
-                    tenantId = payload['https://bigso.org/tenant_id'] || payload['https://bigso.co/tenant_id'] || payload.tenantId || '';
-                    if (tenantId) {
-                        logger.info('Recovered tenantId from refresh token JWT', { tenantId });
-                    }
-                } catch (e) {
-                    logger.warn('Could not parse tenantId from refresh token', { error: (e as Error).message });
+            // The tenant context comes only from the server-held refresh credential.
+            // An incoming browser header is not an identity source.
+            try {
+                const payload = JSON.parse(Buffer.from(refreshToken.split('.')[1], 'base64').toString());
+                tenantId = payload['https://bigso.org/tenant_id'] || payload['https://bigso.co/tenant_id'] || payload.tenantId || '';
+                if (tenantId) {
+                    logger.info('Recovered tenant context from refresh credential');
                 }
+            } catch {
+                logger.warn('Could not resolve tenant context from refresh credential');
             }
 
             logger.info('Forwarding refresh to IDP', { tenantId: tenantId || '(empty)' });
@@ -204,14 +196,15 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                     // Already handled above; this catch prevents unhandled rejection
                 });
             } else {
-                logger.info('Refresh already in flight, waiting for result', { refreshKey });
+                logger.info('Refresh already in flight, waiting for result');
             }
 
             const ssoResponse = await refreshPromise;
             const maxAge = cookieConfig?.maxAge || 7 * 24 * 60 * 60 * 1000;
 
-            if (cookieConfig && ssoResponse.tokens?.jti) {
-                res.cookie(cookieConfig.sessionName, ssoResponse.tokens.jti, {
+            const opaqueSessionHandle = ssoResponse.sessionId ?? ssoResponse.tokens?.jti;
+            if (cookieConfig && opaqueSessionHandle) {
+                res.cookie(cookieConfig.sessionName, opaqueSessionHandle, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: cookieSameSite,
@@ -232,11 +225,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                     maxAge: maxAge,
                     domain: cookieDomain
                 });
-                logger.info('Cookie updated after refresh', {
-                    refreshName,
-                    oldTokenPrefix: refreshToken.substring(0, 20),
-                    newTokenPrefix: newToken.substring(0, 20),
-                });
+                logger.info('Refresh credential cookie rotated');
             } else {
                 logger.warn('No refresh token received in refresh response, not setting cookie');
             }
@@ -260,17 +249,13 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                 logger.warn('No permissions received in refresh response — permissions cookie NOT updated');
             }
 
-            const publicTokens = { ...ssoResponse.tokens };
-            delete publicTokens.refreshToken;
-            res.json({
-                ...ssoResponse,
-                tokens: publicTokens,
-            });
+            res.json(projectPublicAuthResponse(ssoResponse));
         } catch (error: any) {
-            logger.error('Error refreshing tokens', { message: error.message });
+            logger.error('Token refresh failed', { errorType: error?.name ?? 'UnknownError' });
 
             // Clear cookie on any authentication error to prevent crash loops
-            const isAuthError = error.message?.includes('revoked') ||
+            const isAuthError = error?.status === 401 || error?.status === 403 ||
+                error.message?.includes('revoked') ||
                 error.message?.includes('expired') ||
                 error.message?.includes('Invalid') ||
                 error.message?.includes('not recognized') ||
@@ -282,9 +267,9 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
                     path: cookiePath,
                     domain: cookieDomain
                 });
-                logger.info('Cleared invalid refresh token cookie', { refreshName, reason: error.message });
+                logger.info('Cleared invalid refresh credential cookie');
             }
-            res.status(401).json({ error: error.message || 'Failed to refresh tokens' });
+            res.status(401).json({ error: 'refresh_failed' });
         }
     });
 
@@ -327,18 +312,17 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
             const cookie = options.cookieConfig;
             const base = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: cookie.sameSite, maxAge: cookie.maxAge, domain: cookie.domain } as const;
-            res.cookie(cookie.sessionName, session.tokens.jti, { ...base, path: cookie.sessionPath });
+            res.cookie(cookie.sessionName, session.sessionId ?? session.tokens.jti, { ...base, path: cookie.sessionPath });
             res.cookie(cookie.refreshName, session.tokens.refreshToken, { ...base, path: cookie.refreshPath });
             res.cookie(cookie.permissionName, serializePermissions(session.currentTenant.permissions), { ...base, path: cookie.permissionPath });
             if (options.onLoginSuccess) await options.onLoginSuccess(session);
-            delete (session as any).tokens.refreshToken;
-            res.status(200).json(session);
+            res.status(200).json(projectPublicAuthResponse(session));
         } catch (error: any) {
             const cookie = options.cookieConfig;
             for (const [name, path] of [[cookie.sessionName, cookie.sessionPath], [cookie.refreshName, cookie.refreshPath], [cookie.permissionName, cookie.permissionPath]] as const) {
                 res.clearCookie(name, { domain: cookie.domain, path });
             }
-            logger.warn('Tenant session replacement failed', { message: error.message });
+            logger.warn('Tenant session replacement failed', { errorType: error?.name ?? 'UnknownError' });
             res.status(401).json({ error: 'tenant_switch_failed' });
         }
     });
@@ -369,7 +353,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
             }
         } catch (error: any) {
             revocationSucceeded = false;
-            logger.warn('Failed to logout in SSO Backend', { message: error.message });
+            logger.warn('Failed to logout in SSO Backend', { errorType: error?.name ?? 'UnknownError' });
             // Continue — always clear cookies and respond regardless of sso-core error
         } finally {
             // Always clear cookies no matter what happened above
