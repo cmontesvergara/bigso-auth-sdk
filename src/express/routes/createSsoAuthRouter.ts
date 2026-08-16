@@ -328,7 +328,7 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
     });
 
     router.post('/logout', async (req: import('express').Request, res: import('express').Response) => {
-        const accessToken = req.headers.authorization?.startsWith('Bearer ')
+        let accessToken = req.headers.authorization?.startsWith('Bearer ')
             ? req.headers.authorization.substring(7)
             : '';
 
@@ -340,8 +340,20 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
 
         let revocationSucceeded = true;
         try {
+            if (!accessToken && options.cookieConfig) {
+                const sessionId = req.cookies?.[options.cookieConfig.sessionName];
+                if (sessionId) {
+                    const current = await options.ssoClient.session(
+                        sessionId,
+                        options.ssoClient.getClientOptions().appId,
+                    );
+                    accessToken = current?.tokens?.accessToken ?? current?.accessToken ?? '';
+                }
+            }
+
             if (accessToken) {
-                // Only attempt SSO-core revocation when we actually have a token
+                // The BFF resolves the credential from its HttpOnly session when
+                // the browser correctly sends no bearer token.
                 await options.ssoClient.logout(accessToken, { scope });
             } else {
                 logger.warn('Logout called without access token — skipping SSO-core revocation, clearing cookies anyway.');

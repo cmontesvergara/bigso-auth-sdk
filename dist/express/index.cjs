@@ -447,7 +447,7 @@ function createSsoAuthRouter(options) {
     }
   });
   router.post("/logout", async (req, res) => {
-    const accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
+    let accessToken = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.substring(7) : "";
     const scope = req.body?.scope ?? (req.body?.revokeAll ? "global" : "application");
     if (scope !== "application" && scope !== "global") {
       res.status(400).json({ error: "unsupported_logout_scope" });
@@ -455,6 +455,16 @@ function createSsoAuthRouter(options) {
     }
     let revocationSucceeded = true;
     try {
+      if (!accessToken && options.cookieConfig) {
+        const sessionId = req.cookies?.[options.cookieConfig.sessionName];
+        if (sessionId) {
+          const current = await options.ssoClient.session(
+            sessionId,
+            options.ssoClient.getClientOptions().appId
+          );
+          accessToken = current?.tokens?.accessToken ?? current?.accessToken ?? "";
+        }
+      }
       if (accessToken) {
         await options.ssoClient.logout(accessToken, { scope });
       } else {

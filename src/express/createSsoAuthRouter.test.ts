@@ -38,6 +38,27 @@ async function serveRefresh(client: any) {
     return { server, url: `http://127.0.0.1:${address.port}/auth/refresh` };
 }
 
+async function serveLogout(client: any) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+        (req as any).cookies = { 'app-session': 'session-a' };
+        next();
+    });
+    app.use('/auth', createSsoAuthRouter({
+        ssoClient: client,
+        frontendUrl: 'https://app.bigso.test',
+        identityLogoutUrl: 'https://auth.bigso.test/auth/sign-out',
+        logoutReturnUri: 'https://app.bigso.test/launch',
+        cookieConfig,
+    }));
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+    return { server, url: `http://127.0.0.1:${address.port}/auth/logout` };
+}
+
 async function serveAuthRoute(client: any, route: 'exchange' | 'session') {
     const app = express();
     app.use(express.json());
@@ -198,5 +219,35 @@ describe('refresh route', () => {
         const body = await response.json();
         expect(body.currentTenant.permissions).toEqual([{ resource: 'orders', action: 'read' }]);
         expect(body).not.toHaveProperty('tokens');
+    });
+});
+
+describe('logout route', () => {
+    const servers: any[] = [];
+    afterEach(async () => {
+        await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    });
+
+    it('resolves the access token server-side for global logout', async () => {
+        const client = {
+            getClientOptions: () => ({ appId: 'app-a' }),
+            session: vi.fn().mockResolvedValue({ tokens: { accessToken: 'access-a' } }),
+            logout: vi.fn().mockResolvedValue(undefined),
+        };
+        const running = await serveLogout(client);
+        servers.push(running.server);
+
+        const response = await fetch(running.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: 'global' }),
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(client.session).toHaveBeenCalledWith('session-a', 'app-a');
+        expect(client.logout).toHaveBeenCalledWith('access-a', { scope: 'global' });
+        expect(body).toMatchObject({ success: true, scope: 'global' });
+        expect(body.continueUrl).toContain('https://auth.bigso.test/auth/sign-out');
     });
 });
