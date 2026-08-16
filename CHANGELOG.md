@@ -1,3 +1,9 @@
+## [0.16.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.15.1...v0.16.0) (2026-08-16)
+
+### Nuevas funcionalidades
+
+* **express:** implement host-only cookie profile and CSRF guard for BFF sessions ([e5a39c0](https://github.com/cmontesvergara/bigso-auth-sdk/commit/e5a39c0b5e7948a16b60f3a15aef251fceed0bec))
+
 ## [0.15.1](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.15.0...v0.15.1) (2026-08-16)
 
 ### Correcciones
