@@ -1,3 +1,9 @@
+## [0.15.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.3...v0.15.0) (2026-08-16)
+
+### Nuevas funcionalidades
+
+* enhance SSO client and logging with improved error handling and credential redaction ([10f56a8](https://github.com/cmontesvergara/bigso-auth-sdk/commit/10f56a814b4c384c0d32017a9b0e9648fd873a35))
+
 ## [0.14.3](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.14.2...v0.14.3) (2026-08-15)
 
 ### Correcciones
