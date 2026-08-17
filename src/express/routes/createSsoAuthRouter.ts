@@ -136,6 +136,37 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         }
     }
 
+    async function resolveActiveApplicationSession(
+        req: import('express').Request,
+        res: import('express').Response,
+    ): Promise<{ sessionHandle: string; session: any } | null> {
+        const sessionHandle = getSessionHandleFromCookies(req);
+        if (!sessionHandle) {
+            res.status(401).json({ error: 'session_required' });
+            return null;
+        }
+
+        try {
+            const client = options.ssoClient.getClientOptions();
+            const session = await options.ssoClient.session(sessionHandle, client.appId);
+            if (session?.success === false) {
+                clearAuthCookies(res);
+                res.status(401).json({ error: 'session_expired' });
+                return null;
+            }
+            return { sessionHandle, session };
+        } catch (error: any) {
+            const upstreamStatus = Number(error?.status);
+            if (upstreamStatus >= 400 && upstreamStatus < 500) {
+                clearAuthCookies(res);
+                res.status(401).json({ error: 'session_expired' });
+                return null;
+            }
+            res.status(503).json({ error: 'session_temporarily_unavailable' });
+            return null;
+        }
+    }
+
     router.post('/exchange', async (req: import('express').Request, res: import('express').Response) => {
 
         logger.info('Received authentication exchange request');
@@ -220,13 +251,9 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         res.set('Expires', '0');
         if (effectiveCookieConfig) {
             logger.info('Resolving application session');
-            const sessionHandle = getSessionHandleFromCookies(req);
-            if (!sessionHandle) {
-                res.status(401).json({ error: 'session_required' });
-                return;
-            }
-            const ssoclientOptions = options.ssoClient.getClientOptions();
-            const ssoSession = await options.ssoClient.session(sessionHandle, ssoclientOptions.appId);
+            const resolved = await resolveActiveApplicationSession(req, res);
+            if (!resolved) return;
+            const { sessionHandle, session: ssoSession } = resolved;
             res.json(projectPublicAuthResponse({
                 success: true,
                 ...ssoSession,
@@ -242,13 +269,9 @@ export function createSsoAuthRouter(options: CreateSsoAuthRouterOptions): Router
         // performs server-side refresh, so this route is a no-op that returns the public session.
         if (effectiveCookieConfig && isHostOnlyConfig(effectiveCookieConfig)) {
             logger.info('Host-only refresh route invoked');
-            const sessionHandle = getSessionHandleFromCookies(req);
-            if (!sessionHandle) {
-                res.status(401).json({ error: 'session_required' });
-                return;
-            }
-            const ssoclientOptions = options.ssoClient.getClientOptions();
-            const ssoSession = await options.ssoClient.session(sessionHandle, ssoclientOptions.appId);
+            const resolved = await resolveActiveApplicationSession(req, res);
+            if (!resolved) return;
+            const { sessionHandle, session: ssoSession } = resolved;
             res.json(projectPublicAuthResponse({
                 success: true,
                 ...ssoSession,

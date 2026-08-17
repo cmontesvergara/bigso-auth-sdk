@@ -164,6 +164,71 @@ describe('host-only cookie profile', () => {
         expect(body.csrfToken).toBe(makeCsrfHeader('session-a'));
     });
 
+    it('rejects an inactive application session without issuing a csrfToken', async () => {
+        const client = createMockClient({
+            session: vi.fn().mockResolvedValue({ success: false }),
+        });
+        const running = await serveAuthRouter(client);
+        servers.push(running.server);
+
+        const response = await fetch(`${running.baseUrl}/session`);
+        const body = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(body).toEqual({ error: 'session_expired' });
+        expect(body.csrfToken).toBeUndefined();
+        expect(response.headers.getSetCookie().some((cookie) =>
+            cookie.startsWith(`${hostOnlyCookieConfig.sessionName}=`)
+            && cookie.includes('Expires=Thu, 01 Jan 1970'))).toBe(true);
+    });
+
+    it('rejects host-only refresh for an inactive application session', async () => {
+        const client = createMockClient({
+            session: vi.fn().mockResolvedValue({ success: false }),
+        });
+        const running = await serveAuthRouter(client);
+        servers.push(running.server);
+
+        const response = await fetch(`${running.baseUrl}/refresh`, { method: 'POST' });
+        const body = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(body).toEqual({ error: 'session_expired' });
+        expect(body.csrfToken).toBeUndefined();
+    });
+
+    it('maps an Identity 4xx session rejection to a terminal browser response', async () => {
+        const upstreamError = Object.assign(new Error('revoked upstream'), { status: 401 });
+        const client = createMockClient({
+            session: vi.fn().mockRejectedValue(upstreamError),
+        });
+        const running = await serveAuthRouter(client);
+        servers.push(running.server);
+
+        const response = await fetch(`${running.baseUrl}/session`);
+        const body = await response.json();
+
+        expect(response.status).toBe(401);
+        expect(body).toEqual({ error: 'session_expired' });
+        expect(body.csrfToken).toBeUndefined();
+    });
+
+    it('preserves the session cookie when Identity is temporarily unavailable', async () => {
+        const upstreamError = Object.assign(new Error('temporary outage'), { status: 503 });
+        const client = createMockClient({
+            session: vi.fn().mockRejectedValue(upstreamError),
+        });
+        const running = await serveAuthRouter(client);
+        servers.push(running.server);
+
+        const response = await fetch(`${running.baseUrl}/session`);
+        const body = await response.json();
+
+        expect(response.status).toBe(503);
+        expect(body).toEqual({ error: 'session_temporarily_unavailable' });
+        expect(response.headers.getSetCookie()).toEqual([]);
+    });
+
     it('rotates the host-only session cookie on tenant switch', async () => {
         const client = createMockClient({
             authorizeTenant: vi.fn().mockResolvedValue({ code: 'code-b' }),
