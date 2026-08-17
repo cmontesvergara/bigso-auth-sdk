@@ -1,3 +1,9 @@
+## [0.17.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.16.0...v0.17.0) (2026-08-17)
+
+### Nuevas funcionalidades
+
+* **csrf:** enhance CSRF validation to accept same-site requests for BFF deployments ([e7455ee](https://github.com/cmontesvergara/bigso-auth-sdk/commit/e7455ee04bf03d0bc245e4dedd4758aff9c634de))
+
 ## [0.16.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.15.1...v0.16.0) (2026-08-16)
 
 ### Nuevas funcionalidades
