@@ -350,4 +350,44 @@ describe('CSRF guard fail-closed behavior', () => {
         });
         expect(response.status).toBe(403);
     });
+
+    it('allows request with Sec-Fetch-Site same-site for cross-origin BFF deployments', async () => {
+        const app = express();
+        app.use(express.json());
+        app.use((req, _res, next) => {
+            const raw = req.headers.cookie as string | undefined;
+            (req as any).cookies = raw
+                ? Object.fromEntries(raw.split(';').map((c) => c.trim().split('=').map((p) => decodeURIComponent(p))))
+                : {};
+            next();
+        });
+        const guard = csrfGuardMiddleware({
+            getSessionCsrfToken: (req) => {
+                const handle = req.cookies?.[hostOnlyCookieConfig.sessionName];
+                return handle ? generateCsrfToken(handle, 'static-csrf-secret-for-tests') : undefined;
+            },
+            allowedOrigins: [TEST_ORIGIN],
+            requireSameSiteFetch: true,
+        });
+        app.post('/mutate', guard, (_req, res) => res.json({ ok: true }));
+        const server = app.listen(0);
+        await new Promise<void>((resolve) => server.once('listening', resolve));
+        const address = server.address();
+        if (!address || typeof address === 'string') throw new Error('Test server did not bind');
+        servers.push(server);
+
+        const response = await fetch(`http://127.0.0.1:${address.port}/mutate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Origin: TEST_ORIGIN,
+                'Sec-Fetch-Site': 'same-site',
+                'X-Csrf-Token': makeCsrfHeader('session-a'),
+                Cookie: `${hostOnlyCookieConfig.sessionName}=session-a`,
+            },
+            body: JSON.stringify({}),
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ ok: true });
+    });
 });

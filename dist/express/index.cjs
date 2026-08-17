@@ -207,8 +207,11 @@ function validateCsrf(req, options) {
   }
   if (options.requireSameSiteFetch) {
     const secFetchSite = req.headers["sec-fetch-site"];
-    if (secFetchSite && secFetchSite.toLowerCase() !== "same-origin") {
-      return { ok: false, reason: "sec_fetch_site_mismatch" };
+    if (secFetchSite) {
+      const site = secFetchSite.toLowerCase();
+      if (site !== "same-origin" && site !== "same-site") {
+        return { ok: false, reason: "sec_fetch_site_mismatch" };
+      }
     }
   }
   const headerToken = req.headers[CSRF_HEADER]?.trim();
@@ -373,7 +376,7 @@ function createSsoAuthRouter(options) {
     }
     return void 0;
   }
-  function setHostOnlySessionCookie(res, sessionHandle, maxAge) {
+  function setHostOnlySessionCookie(res, sessionHandle) {
     if (!effectiveCookieConfig || !isHostOnlyConfig(effectiveCookieConfig)) return;
     const { name, options: options2 } = buildSessionCookieOptions(effectiveCookieConfig);
     res.cookie(name, sessionHandle, options2);
@@ -414,7 +417,7 @@ function createSsoAuthRouter(options) {
       if (effectiveCookieConfig && opaqueSessionHandle) {
         if (isHostOnlyConfig(effectiveCookieConfig)) {
           logger2.info("Establishing host-only application session cookie");
-          setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+          setHostOnlySessionCookie(res, opaqueSessionHandle);
           clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
         } else {
           logger2.info("Establishing legacy application session cookies");
@@ -628,7 +631,7 @@ function createSsoAuthRouter(options) {
       const session = await options.ssoClient.exchangeCode(authorization.code, verifier);
       const opaqueSessionHandle = session.sessionId ?? session.tokens.jti;
       if (isHostOnlyConfig(effectiveCookieConfig) && opaqueSessionHandle) {
-        setHostOnlySessionCookie(res, opaqueSessionHandle, effectiveCookieConfig.maxAge);
+        setHostOnlySessionCookie(res, opaqueSessionHandle);
         clearLegacyCookies(res, effectiveCookieConfig.legacyCookies ?? []);
       } else {
         const cookie = effectiveCookieConfig;

@@ -100,8 +100,15 @@ export function validateCsrf(req: Request, options: CsrfMiddlewareOptions): Csrf
 
     if (options.requireSameSiteFetch) {
         const secFetchSite = req.headers['sec-fetch-site'] as string | undefined;
-        if (secFetchSite && secFetchSite.toLowerCase() !== 'same-origin') {
-            return { ok: false, reason: 'sec_fetch_site_mismatch' };
+        // Accept same-origin and same-site requests. BFF deployments where the
+        // frontend and middleware share an eTLD+1 but live on different subdomains
+        // (e.g. www.ordamy.com -> new-middleware.ordamy.com) send same-site, not
+        // same-origin. Reject only explicit cross-site navigations.
+        if (secFetchSite) {
+            const site = secFetchSite.toLowerCase();
+            if (site !== 'same-origin' && site !== 'same-site') {
+                return { ok: false, reason: 'sec_fetch_site_mismatch' };
+            }
         }
     }
 
