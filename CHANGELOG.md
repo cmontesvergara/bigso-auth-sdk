@@ -1,3 +1,9 @@
+## [0.17.1](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.17.0...v0.17.1) (2026-08-17)
+
+### Correcciones
+
+* **express:** reject inactive application sessions ([17b2e38](https://github.com/cmontesvergara/bigso-auth-sdk/commit/17b2e38b02fdf9fa18a01b6d28facfb5190205a2))
+
 ## [0.17.0](https://github.com/cmontesvergara/bigso-auth-sdk/compare/v0.16.0...v0.17.0) (2026-08-17)
 
 ### Nuevas funcionalidades
